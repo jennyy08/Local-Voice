@@ -1,11 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import L from "leaflet";
+// @ts-ignore
+import "leaflet/dist/leaflet.css";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import {
   MapPin, Camera, Phone, BookOpen, Search, Menu, X,
   Mail, CheckCircle, Clock, AlertCircle, ChevronRight,
   Building2, ExternalLink, ThumbsUp, Moon, Sun, Bookmark, BookmarkCheck,
 } from "lucide-react";
 
+
+
 // ── Data ─────────────────────────────────────────────────────────────────────
+
+// Ottawa fallback center, used if geolocation is denied/unavailable.
+const OTTAWA_CENTER: [number, number] = [45.4215, -75.6919];
 
 const ISSUES = [
   {
@@ -15,8 +24,8 @@ const ISSUES = [
     status: "In Review",
     date: "Jul 18, 2026",
     votes: 12,
-    x: 38,
-    y: 44,
+    lat: 45.4126,
+    lng: -75.6902,
     description: "Large pothole ~30cm wide. Caused two flat tires in three days.",
   },
   {
@@ -26,8 +35,8 @@ const ISSUES = [
     status: "Resolved",
     date: "Jul 10, 2026",
     votes: 8,
-    x: 63,
-    y: 57,
+    lat: 45.3985,
+    lng: -75.6934,
     description: "Streetlight out for six weeks. Corner is unsafe at night.",
   },
   {
@@ -37,8 +46,8 @@ const ISSUES = [
     status: "Pending",
     date: "Jul 21, 2026",
     votes: 5,
-    x: 54,
-    y: 71,
+    lat: 45.3958,
+    lng: -75.6906,
     description: "Bins not collected since July 14. Material scattered on sidewalk.",
   },
   {
@@ -48,8 +57,8 @@ const ISSUES = [
     status: "In Review",
     date: "Jul 19, 2026",
     votes: 19,
-    x: 27,
-    y: 62,
+    lat: 45.4172,
+    lng: -75.7010,
     description: "Large crack creating trip hazard for strollers and wheelchair users.",
   },
   {
@@ -59,8 +68,8 @@ const ISSUES = [
     status: "Resolved",
     date: "Jul 8, 2026",
     votes: 7,
-    x: 74,
-    y: 37,
+    lat: 45.3903,
+    lng: -75.7038,
     description: "Storm debris not cleared after last weekend's storm.",
   },
   {
@@ -70,8 +79,8 @@ const ISSUES = [
     status: "Pending",
     date: "Jul 22, 2026",
     votes: 3,
-    x: 20,
-    y: 29,
+    lat: 45.3877,
+    lng: -75.7075,
     description: "New graffiti appeared overnight on city utility box.",
   },
 ];
@@ -185,12 +194,62 @@ const NAV_LINKS = [
   { id: "directory", label: "Directory" },
 ];
 
+// ── Leaflet helpers ────────────────────────────────────────────────────────
+
+// Builds a colored circular pin matching the app's existing marker look,
+// using a plain divIcon since Leaflet can't render React components as markers directly.
+function categoryDivIcon(color: string, opts?: { dashed?: boolean }) {
+  return L.divIcon({
+    className: "",
+    html: `<div style="
+      width: 22px; height: 22px; border-radius: 9999px;
+      background:${color}; border:2px solid ${opts?.dashed ? "transparent" : "white"};
+      ${opts?.dashed ? `outline: 2px dashed ${color}; outline-offset: 2px;` : ""}
+      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    "></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -11],
+  });
+}
+
+const youAreHereIcon = L.divIcon({
+  className: "",
+  html: `<div style="
+    width: 16px; height: 16px; border-radius: 9999px;
+    background:#0B1F3A; border:3px solid #F2EDE4;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  "></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
+const draftPinIcon = categoryDivIcon("#F2A73B", { dashed: true });
+
+// Recenters the map whenever `center` changes (e.g. once geolocation resolves).
+function RecenterMap({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center);
+  }, [center, map]);
+  return null;
+}
+
+// Listens for map clicks so a resident can drop a pin to start a new report.
+function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [activeSection, setActiveSection] = useState("home");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedPin, setSelectedPin] = useState<number | null>(null);
   const [filterCategory, setFilterCategory] = useState("All");
   const [learnTab, setLearnTab] = useState("council");
   const [contactSearch, setContactSearch] = useState("");
@@ -204,6 +263,11 @@ export default function App() {
   const [votes, setVotes] = useState<Record<number, boolean>>({});
   const [darkMode, setDarkMode] = useState(false);
   const [savedIssueIds, setSavedIssueIds] = useState<number[]>([]);
+
+  // Real map state: user's live location, and the draft pin they drop to report a new issue.
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [locatingUser, setLocatingUser] = useState(true);
+  const [draftPin, setDraftPin] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("localvoice-theme");
@@ -231,6 +295,25 @@ export default function App() {
         // Ignore invalid saved issues
       }
     }
+  }, []);
+
+  // Ask for the resident's location once on load so the map opens centered on them.
+  // Falls back to the Ottawa city-wide center if permission is denied or unavailable.
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocatingUser(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+        setLocatingUser(false);
+      },
+      () => {
+        setLocatingUser(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
   }, []);
 
   useEffect(() => {
@@ -261,17 +344,35 @@ export default function App() {
     );
   };
 
-  const handleReport = (e: React.FormEvent) => {
+  // Called when a resident clicks anywhere on the map: drops a draft pin and
+  // reverse-geocodes it into a readable address for the report form.
+  const handleMapClick = (lat: number, lng: number) => {
+    setDraftPin({ lat, lng });
+    setReportForm((p) => ({ ...p, location: "Locating address…" }));
+
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const address = data?.display_name
+          ? data.display_name.split(",").slice(0, 2).join(",").trim()
+          : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setReportForm((p) => ({ ...p, location: address }));
+      })
+      .catch(() => {
+        setReportForm((p) => ({ ...p, location: `${lat.toFixed(5)}, ${lng.toFixed(5)}` }));
+      });
+  };
+
+  const handleReport = (e: FormEvent) => {
     e.preventDefault();
     setReportSubmitted(true);
     setTimeout(() => setReportSubmitted(false), 4000);
     setReportForm({ title: "", category: "Roads", description: "", location: "" });
+    setDraftPin(null);
   };
 
   const visibleIssues =
     filterCategory === "All" ? ISSUES : ISSUES.filter((i) => i.category === filterCategory);
-
-  const savedIssues = ISSUES.filter((issue) => savedIssueIds.includes(issue.id));
 
   const visibleContacts = CONTACTS.filter(
     (c) =>
@@ -280,10 +381,10 @@ export default function App() {
   );
 
   const activeLearn = LEARN_SECTIONS.find((s) => s.id === learnTab)!;
+  const mapCenter = userLocation ?? OTTAWA_CENTER;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
-
       {/* ── Nav ────────────────────────────────────────────────────── */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-primary/95 backdrop-blur-sm border-b border-white/10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
@@ -449,7 +550,7 @@ export default function App() {
               Report an Issue
             </h2>
             <p className="text-muted-foreground mt-3 max-w-lg text-sm leading-relaxed">
-              Select a pin to see an existing report, or fill out the form to submit a new one. All reports are forwarded to Ottawa 311.
+              Click anywhere on the map to drop a pin at that location, or select an existing pin to see its report. All reports are forwarded to Ottawa 311.
             </p>
           </div>
 
@@ -459,101 +560,62 @@ export default function App() {
               className="lg:col-span-3 relative rounded-sm overflow-hidden shadow-lg bg-[#E8E2D8]"
               style={{ height: 460 }}
             >
-              {/* SVG street grid */}
-              <svg
-                className="absolute inset-0 w-full h-full"
-                xmlns="http://www.w3.org/2000/svg"
-                preserveAspectRatio="none"
-              >
-                <rect width="100%" height="100%" fill="#E8E2D8" />
+              {locatingUser && (
+                <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-[#E8E2D8]">
+                  <p className="font-mono text-xs text-muted-foreground tracking-widest uppercase">
+                    Finding your location…
+                  </p>
+                </div>
+              )}
 
-                {/* City blocks */}
-                {[8, 22, 36, 50, 64, 78].flatMap((x) =>
-                  [8, 22, 36, 50, 64, 78].map((y) => (
-                    <rect
-                      key={`block-${x}-${y}`}
-                      x={`${x}%`} y={`${y}%`}
-                      width="11%" height="11%"
-                      fill="#D8D0BF" rx="2"
-                    />
-                  ))
+              <MapContainer
+                center={mapCenter}
+                zoom={13}
+                scrollWheelZoom
+                style={{ width: "100%", height: "100%" }}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+
+                <RecenterMap center={mapCenter} />
+                <MapClickHandler onMapClick={handleMapClick} />
+
+                {userLocation && (
+                  <Marker position={userLocation} icon={youAreHereIcon}>
+                    <Popup>You are here</Popup>
+                  </Marker>
                 )}
 
-                {/* Horizontal streets */}
-                {[20, 34, 48, 62, 76].map((y) => (
-                  <line
-                    key={`h-${y}`}
-                    x1="0" y1={`${y}%`} x2="100%" y2={`${y}%`}
-                    stroke="#C8BEA8" strokeWidth="7"
-                  />
-                ))}
-                {/* Vertical streets */}
-                {[20, 34, 48, 62, 76].map((x) => (
-                  <line
-                    key={`v-${x}`}
-                    x1={`${x}%`} y1="0" x2={`${x}%`} y2="100%"
-                    stroke="#C8BEA8" strokeWidth="7"
-                  />
-                ))}
-
-                {/* Green space */}
-                <rect x="64%" y="22%" width="13%" height="13%" fill="#B4CCA4" rx="3" />
-                <text x="70.5%" y="29.5%" textAnchor="middle" fontSize="7" fill="#5A7A46" fontFamily="monospace" fontWeight="500">PARK</text>
-
-                {/* Water feature */}
-                <rect x="0" y="60%" width="14%" height="40%" fill="#AACCDD" opacity="0.6" />
-                <text x="7%" y="75%" textAnchor="middle" fontSize="6" fill="#3A6A80" fontFamily="monospace">CANAL</text>
-
-                {/* Street labels */}
-                <text x="34%" y="18.5%" textAnchor="middle" fontSize="6.5" fill="#9A8A74" fontFamily="monospace" fontWeight="500">ELGIN ST</text>
-                <text x="62%" y="18.5%" textAnchor="middle" fontSize="6.5" fill="#9A8A74" fontFamily="monospace" fontWeight="500">BANK ST</text>
-                <text x="14%" y="34%" textAnchor="middle" fontSize="6" fill="#9A8A74" fontFamily="monospace" transform="rotate(-90, 100, 150)">LYON ST</text>
-                <text x="75%" y="18.5%" textAnchor="middle" fontSize="6.5" fill="#9A8A74" fontFamily="monospace" fontWeight="500">BRONSON</text>
-
-                {/* You are here */}
-                <circle cx="48%" cy="48%" r="6" fill="#0B1F3A" opacity="0.9" />
-                <circle cx="48%" cy="48%" r="3" fill="#F2EDE4" />
-                <text x="48%" y="43%" textAnchor="middle" fontSize="6" fill="#0B1F3A" fontFamily="monospace" fontWeight="600">YOU</text>
-              </svg>
-
-              {/* Issue pins */}
-              {visibleIssues.map((issue) => {
-                const cfg = CATEGORY_CONFIG[issue.category] || { color: "#555", bg: "#eee" };
-                const isSelected = selectedPin === issue.id;
-                return (
-                  <button
-                    key={issue.id}
-                    onClick={() => setSelectedPin(isSelected ? null : issue.id)}
-                    className="absolute -translate-x-1/2 -translate-y-full transition-transform hover:scale-110 z-10"
-                    style={{ left: `${issue.x}%`, top: `${issue.y}%` }}
-                    title={issue.title}
-                  >
-                    <div
-                      className={`w-6 h-6 rounded-full border-2 border-white shadow-md flex items-center justify-center transition-all ${
-                        isSelected ? "scale-125 shadow-lg" : ""
-                      }`}
-                      style={{ backgroundColor: cfg.color }}
+                {visibleIssues.map((issue) => {
+                  const cfg = CATEGORY_CONFIG[issue.category] || { color: "#555", bg: "#eee" };
+                  return (
+                    <Marker
+                      key={issue.id}
+                      position={[issue.lat, issue.lng]}
+                      icon={categoryDivIcon(cfg.color)}
                     >
-                      <MapPin size={10} color="white" />
-                    </div>
-
-                    {isSelected && (
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-card border border-border rounded-sm shadow-2xl p-3 w-52 text-left z-20">
-                        <p className="text-xs font-semibold text-card-foreground leading-tight mb-1">
-                          {issue.title}
-                        </p>
+                      <Popup>
+                        <p className="text-xs font-semibold leading-tight mb-1">{issue.title}</p>
                         <p className="text-[11px] font-mono text-muted-foreground">
                           {issue.category} · {issue.status}
                         </p>
                         <p className="text-[11px] font-mono text-muted-foreground">{issue.date}</p>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+                      </Popup>
+                    </Marker>
+                  );
+                })}
+
+                {draftPin && (
+                  <Marker position={[draftPin.lat, draftPin.lng]} icon={draftPinIcon}>
+                    <Popup>New report location — fill out the form to submit</Popup>
+                  </Marker>
+                )}
+              </MapContainer>
 
               {/* Category filter overlay */}
-              <div className="absolute top-3 right-3 flex flex-wrap gap-1 justify-end max-w-[180px]">
+              <div className="absolute top-3 right-3 z-[1000] flex flex-wrap gap-1 justify-end max-w-[180px]">
                 {["All", ...Object.keys(CATEGORY_CONFIG)].map((cat) => (
                   <button
                     key={cat}
@@ -570,15 +632,19 @@ export default function App() {
               </div>
 
               {/* Legend */}
-              <div className="absolute bottom-3 left-3 bg-card/90 rounded-sm p-2.5 border border-border/50 shadow">
+              <div className="absolute bottom-3 left-3 z-[1000] bg-card/90 rounded-sm p-2.5 border border-border/50 shadow">
                 <p className="font-mono text-[9px] text-muted-foreground mb-1.5 tracking-widest uppercase">Map Legend</p>
                 <div className="flex items-center gap-1.5 mb-1">
                   <div className="w-2 h-2 rounded-full bg-[#0B1F3A]" />
                   <span className="font-mono text-[10px] text-foreground">Your location</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 mb-1">
                   <div className="w-2 h-2 rounded-full bg-[#DC4E28]" />
                   <span className="font-mono text-[10px] text-foreground">Reported issue</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full border border-dashed border-[#F2A73B]" />
+                  <span className="font-mono text-[10px] text-foreground">New report (click map)</span>
                 </div>
               </div>
             </div>
@@ -590,7 +656,7 @@ export default function App() {
                 Forwarded to Ottawa 311
               </p>
               <p className="mb-5 text-xs text-muted-foreground leading-relaxed">
-                Your draft is saved automatically in this browser while you type, so the experience feels more like a real app.
+                Click a location on the map to auto-fill it below, or type it manually. Your draft is saved automatically while you type.
               </p>
 
               {reportSubmitted ? (
@@ -637,12 +703,12 @@ export default function App() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-1.5">
-                        Intersection
+                        Location
                       </label>
                       <input
                         value={reportForm.location}
                         onChange={(e) => setReportForm((p) => ({ ...p, location: e.target.value }))}
-                        placeholder="Elgin & Gladstone"
+                        placeholder="Click the map, or type it here"
                         className="w-full px-3 py-2.5 bg-secondary border border-border rounded-sm text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
                         required
                       />
@@ -896,7 +962,7 @@ export default function App() {
 
           {visibleContacts.length === 0 ? (
             <div className="mb-10 rounded-sm border border-dashed border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">
-              No contacts match “{contactSearch}” yet. Try a broader search term.
+              No contacts match "{contactSearch}" yet. Try a broader search term.
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
