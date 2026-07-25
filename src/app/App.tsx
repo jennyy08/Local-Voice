@@ -312,9 +312,9 @@ export default function App() {
               type="button"
               onClick={() => setDarkMode((prev) => !prev)}
               className="ml-2 rounded-sm border border-white/15 p-2 text-primary-foreground/70 transition-colors hover:text-primary-foreground"
-              aria-label="Toggle color theme"
+              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+              {darkMode ? <Moon size={16} /> : <Sun size={16} />}
             </button>
           </div>
 
@@ -323,9 +323,9 @@ export default function App() {
               type="button"
               onClick={() => setDarkMode((prev) => !prev)}
               className="rounded-sm border border-white/15 p-2 text-primary-foreground/70 transition-colors hover:text-primary-foreground"
-              aria-label="Toggle color theme"
+              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+              {darkMode ? <Moon size={16} /> : <Sun size={16} />}
             </button>
             <button
               type="button"
