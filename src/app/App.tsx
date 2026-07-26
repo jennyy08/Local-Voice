@@ -1,7 +1,19 @@
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import L from "leaflet";
+//@ts-ignore
 import "leaflet/dist/leaflet.css";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp,
+  limit as fsLimit,
+} from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "../lib/firebase";
 import {
   MapPin, Camera, Phone, BookOpen, Search, Menu, X,
   Mail, CheckCircle, Clock, AlertCircle, ChevronRight,
@@ -14,7 +26,7 @@ import {
 const OTTAWA_CENTER: [number, number] = [45.4215, -75.6919];
 
 type Issue = {
-  id: number;
+  id: string;
   title: string;
   category: string;
   status: string;
@@ -26,11 +38,12 @@ type Issue = {
   photo?: string;
 };
 
-// Seed data for the Open Reports feed. Once a resident submits their own
-// report it's added on top of this list and persisted in localStorage.
-const INITIAL_ISSUES: Issue[] = [
+// Seed data used to populate Firestore the very first time the "reports"
+// collection is empty (e.g. a brand new Firebase project). After that,
+// Firestore is the single source of truth shared by every visitor.
+type SeedIssue = Omit<Issue, "id">;
+const SEED_ISSUES: SeedIssue[] = [
   {
-    id: 1,
     title: "Pothole on Elgin St near Gladstone",
     category: "Roads",
     status: "In Review",
@@ -41,7 +54,6 @@ const INITIAL_ISSUES: Issue[] = [
     description: "Large pothole ~30cm wide. Caused two flat tires in three days.",
   },
   {
-    id: 2,
     title: "Broken streetlight — Bank & Third Ave",
     category: "Lighting",
     status: "Resolved",
@@ -52,7 +64,6 @@ const INITIAL_ISSUES: Issue[] = [
     description: "Streetlight out for six weeks. Corner is unsafe at night.",
   },
   {
-    id: 3,
     title: "Overflowing recycling bins at Glebe Community Ctr",
     category: "Waste",
     status: "Pending",
@@ -63,7 +74,6 @@ const INITIAL_ISSUES: Issue[] = [
     description: "Bins not collected since July 14. Material scattered on sidewalk.",
   },
   {
-    id: 4,
     title: "Cracked sidewalk — Lyon St between Lisgar & James",
     category: "Roads",
     status: "In Review",
@@ -74,7 +84,6 @@ const INITIAL_ISSUES: Issue[] = [
     description: "Large crack creating trip hazard for strollers and wheelchair users.",
   },
   {
-    id: 5,
     title: "Fallen tree branch blocking Chamberlain Ave bike lane",
     category: "Parks",
     status: "Resolved",
@@ -85,7 +94,6 @@ const INITIAL_ISSUES: Issue[] = [
     description: "Storm debris not cleared after last weekend's storm.",
   },
   {
-    id: 6,
     title: "Graffiti on utility box — Bronson near Carling",
     category: "Graffiti",
     status: "Pending",
@@ -273,23 +281,16 @@ export default function App() {
     location: "",
   });
   const [reportSubmitted, setReportSubmitted] = useState(false);
-  const [votes, setVotes] = useState<Record<number, boolean>>({});
+  const [votes, setVotes] = useState<Record<string, boolean>>({});
   const [darkMode, setDarkMode] = useState(false);
-  const [savedIssueIds, setSavedIssueIds] = useState<number[]>([]);
+  const [savedIssueIds, setSavedIssueIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Community-submitted reports, seeded from the pilot data and persisted in
-  // localStorage so a resident's own reports stay visible after a refresh.
-  // Nothing here is sent to a backend or to Ottawa 311 — this is a local,
-  // browser-only awareness feed by design.
-  const [issues, setIssues] = useState<Issue[]>(() => {
-    if (typeof window === "undefined") return INITIAL_ISSUES;
-    try {
-      const saved = window.localStorage.getItem("localvoice-open-reports");
-      return saved ? JSON.parse(saved) : INITIAL_ISSUES;
-    } catch {
-      return INITIAL_ISSUES;
-    }
-  });
+  // Community-submitted reports, live-synced from Firestore so every visitor
+  // sees the same shared feed in real time (not just their own browser).
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(true);
 
   // Real map state: user's live location, and the draft pin they drop to report a new issue.
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
@@ -299,8 +300,10 @@ export default function App() {
   // Detail modal: which report (if any) is currently expanded for a closer look.
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
 
-  // Photo attached to the report currently being drafted, stored as a data URL
-  // (kept in memory/localStorage only — nothing is uploaded to a server).
+  // Photo attached to the report currently being drafted. We keep the raw
+  // File for uploading to Firebase Storage, plus a data URL just for the
+  // in-form preview.
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -363,9 +366,45 @@ export default function App() {
     window.localStorage.setItem("localvoice-saved-issues", JSON.stringify(savedIssueIds));
   }, [savedIssueIds]);
 
+  // Subscribe to the shared "reports" collection in Firestore so every
+  // visitor sees the same live feed. Falls back to seeding the pilot data
+  // once, the very first time the collection is empty (e.g. a fresh
+  // Firebase project) so the app isn't blank on first launch.
   useEffect(() => {
-    window.localStorage.setItem("localvoice-open-reports", JSON.stringify(issues));
-  }, [issues]);
+    const reportsQuery = query(collection(db, "reports"), orderBy("createdAt", "desc"), fsLimit(200));
+
+    const unsubscribe = onSnapshot(
+      reportsQuery,
+      async (snapshot) => {
+        if (snapshot.empty && !window.localStorage.getItem("localvoice-seeded")) {
+          window.localStorage.setItem("localvoice-seeded", "true");
+          try {
+            await Promise.all(
+              SEED_ISSUES.map((seed) =>
+                addDoc(collection(db, "reports"), { ...seed, createdAt: serverTimestamp() })
+              )
+            );
+          } catch (err) {
+            console.error("Failed to seed initial reports:", err);
+          }
+          return; // the seed writes will trigger another snapshot with real data
+        }
+
+        const live: Issue[] = snapshot.docs.map((doc) => {
+          const data = doc.data() as Omit<Issue, "id">;
+          return { id: doc.id, ...data };
+        });
+        setIssues(live);
+        setIssuesLoading(false);
+      },
+      (err) => {
+        console.error("Failed to load reports from Firestore:", err);
+        setIssuesLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   // Close the detail modal on Escape, and lock body scroll while it's open.
   useEffect(() => {
@@ -388,10 +427,10 @@ export default function App() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const handleVote = (id: number) =>
+  const handleVote = (id: string) =>
     setVotes((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const toggleSavedIssue = (id: number) => {
+  const toggleSavedIssue = (id: string) => {
     setSavedIssueIds((prev) =>
       prev.includes(id) ? prev.filter((savedId) => savedId !== id) : [...prev, id]
     );
@@ -416,51 +455,72 @@ export default function App() {
       });
   };
 
-  // Reads the selected photo file into a data URL so it can be stored alongside
-  // the report (localStorage only — no server upload).
+  // Keeps the raw File for uploading later, and builds a quick local preview URL.
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
+      setPhotoFile(null);
       setPhotoDataUrl(null);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setPhotoDataUrl(reader.result as string);
-    reader.readAsDataURL(file);
+    setPhotoFile(file);
+    setPhotoDataUrl(URL.createObjectURL(file));
   };
 
-  const handleReport = (e: FormEvent) => {
+  const handleReport = async (e: FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
+    setSubmitting(true);
 
-    // Use the pin the resident dropped on the map; if they typed a location
-    // manually without clicking the map, fall back to their live location
-    // (or the Ottawa center) so the report still gets created instead of
-    // silently doing nothing.
-    const pin = draftPin ?? (userLocation ? { lat: userLocation[0], lng: userLocation[1] } : { lat: OTTAWA_CENTER[0], lng: OTTAWA_CENTER[1] });
+    try {
+      // Use the pin the resident dropped on the map; if they typed a location
+      // manually without clicking the map, fall back to their live location
+      // (or the Ottawa center) so the report still gets created instead of
+      // silently doing nothing.
+      const pin =
+        draftPin ??
+        (userLocation
+          ? { lat: userLocation[0], lng: userLocation[1] }
+          : { lat: OTTAWA_CENTER[0], lng: OTTAWA_CENTER[1] });
 
-    const newIssue: Issue = {
-      id: Date.now(),
-      title: reportForm.title.trim(),
-      category: reportForm.category,
-      status: "Open",
-      date: new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-      votes: 0,
-      lat: pin.lat,
-      lng: pin.lng,
-      description: reportForm.description.trim(),
-      photo: photoDataUrl ?? undefined,
-    };
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        const photoRef = ref(storage, `reports/${Date.now()}-${photoFile.name}`);
+        await uploadBytes(photoRef, photoFile);
+        photoUrl = await getDownloadURL(photoRef);
+      }
 
-    setIssues((prev) => [newIssue, ...prev]);
-    setReportSubmitted(true);
-    setTimeout(() => setReportSubmitted(false), 5000);
-    setReportForm({ title: "", category: "Roads", description: "", location: "" });
-    setDraftPin(null);
-    setPhotoDataUrl(null);
+      await addDoc(collection(db, "reports"), {
+        title: reportForm.title.trim(),
+        category: reportForm.category,
+        status: "Open",
+        date: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        votes: 0,
+        lat: pin.lat,
+        lng: pin.lng,
+        description: reportForm.description.trim(),
+        photo: photoUrl,
+        createdAt: serverTimestamp(),
+      });
+      // No need to manually update `issues` — the Firestore onSnapshot
+      // listener above picks up the new report and updates everyone's view.
+
+      setReportSubmitted(true);
+      setTimeout(() => setReportSubmitted(false), 5000);
+      setReportForm({ title: "", category: "Roads", description: "", location: "" });
+      setDraftPin(null);
+      setPhotoFile(null);
+      setPhotoDataUrl(null);
+    } catch (err) {
+      console.error("Failed to submit report:", err);
+      setSubmitError("Something went wrong submitting your report. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const visibleIssues =
@@ -642,7 +702,7 @@ export default function App() {
               Report an Issue
             </h2>
             <p className="text-muted-foreground mt-3 max-w-lg text-sm leading-relaxed">
-              Click anywhere on the map to drop a pin at that location, or select an existing pin to see its report. All reports are forwarded to Ottawa 311.
+              Click anywhere on the map to drop a pin at that location, or select an existing pin to see its report. Reports are added to the community feed for everyone to see — for urgent issues, contact Ottawa 311 directly.
             </p>
           </div>
 
@@ -745,10 +805,10 @@ export default function App() {
             <div className="lg:col-span-2 bg-card border border-border rounded-sm p-6 shadow-sm">
               <h3 className="font-display text-2xl text-foreground mb-0.5 tracking-tight">Submit a Report</h3>
               <p className="font-mono text-[10px] text-muted-foreground tracking-widest uppercase mb-6">
-                Forwarded to Ottawa 311
+                Community Awareness Feed
               </p>
               <p className="mb-5 text-xs text-muted-foreground leading-relaxed">
-                Click a location on the map to auto-fill it below, or type it manually. Your draft is saved automatically while you type.
+                Click a location on the map to auto-fill it below, or type it manually. Your draft is saved locally while you type; submitted reports are shared with everyone.
               </p>
 
               {reportSubmitted ? (
@@ -839,7 +899,10 @@ export default function App() {
                         <img src={photoDataUrl} alt="Selected issue" className="w-full h-32 object-cover" />
                         <button
                           type="button"
-                          onClick={() => setPhotoDataUrl(null)}
+                          onClick={() => {
+                            setPhotoFile(null);
+                            setPhotoDataUrl(null);
+                          }}
                           className="absolute top-2 right-2 bg-primary/80 text-primary-foreground rounded-sm p-1.5 hover:bg-primary transition-colors"
                           aria-label="Remove photo"
                         >
@@ -855,12 +918,19 @@ export default function App() {
                     )}
                   </div>
 
+                  {submitError && (
+                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2">
+                      {submitError}
+                    </p>
+                  )}
+
                   <button
                     type="submit"
-                    className="w-full bg-accent text-primary font-semibold py-3 rounded-sm flex items-center justify-center gap-2 hover:bg-accent/90 transition-all duration-200 hover:-translate-y-0.5 text-sm mt-1"
+                    disabled={submitting}
+                    className="w-full bg-accent text-primary font-semibold py-3 rounded-sm flex items-center justify-center gap-2 hover:bg-accent/90 transition-all duration-200 hover:-translate-y-0.5 text-sm mt-1 disabled:opacity-60 disabled:hover:translate-y-0"
                   >
                     <MapPin size={15} />
-                    Submit Report to Ottawa 311
+                    {submitting ? "Submitting…" : "Add to Open Reports"}
                   </button>
                 </form>
               )}
@@ -904,7 +974,11 @@ export default function App() {
             </div>
           </div>
 
-          {visibleIssues.length === 0 ? (
+          {issuesLoading ? (
+            <div className="rounded-sm border border-dashed border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">
+              Loading community reports…
+            </div>
+          ) : visibleIssues.length === 0 ? (
             <div className="rounded-sm border border-dashed border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">
               No issues match this filter yet. Try a different category or reset the view.
             </div>
