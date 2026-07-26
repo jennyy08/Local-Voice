@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import L from "leaflet";
-// @ts-ignore
+//@ts-ignore
 import "leaflet/dist/leaflet.css";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import {
@@ -9,14 +9,26 @@ import {
   Building2, ExternalLink, ThumbsUp, Moon, Sun, Bookmark, BookmarkCheck,
 } from "lucide-react";
 
-
-
 // ── Data ─────────────────────────────────────────────────────────────────────
 
 // Ottawa fallback center, used if geolocation is denied/unavailable.
 const OTTAWA_CENTER: [number, number] = [45.4215, -75.6919];
 
-const ISSUES = [
+type Issue = {
+  id: number;
+  title: string;
+  category: string;
+  status: string;
+  date: string;
+  votes: number;
+  lat: number;
+  lng: number;
+  description: string;
+};
+
+// Seed data for the Open Reports feed. Once a resident submits their own
+// report it's added on top of this list and persisted in localStorage.
+const INITIAL_ISSUES: Issue[] = [
   {
     id: 1,
     title: "Pothole on Elgin St near Gladstone",
@@ -181,6 +193,7 @@ const CATEGORY_CONFIG: Record<string, { color: string; bg: string }> = {
 };
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; Icon: typeof CheckCircle }> = {
+  Open: { color: "#92400E", bg: "#FEF3C7", Icon: AlertCircle },
   Pending: { color: "#92400E", bg: "#FEF3C7", Icon: AlertCircle },
   "In Review": { color: "#1E3A8A", bg: "#DBEAFE", Icon: Clock },
   Resolved: { color: "#14532D", bg: "#DCFCE7", Icon: CheckCircle },
@@ -264,6 +277,20 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [savedIssueIds, setSavedIssueIds] = useState<number[]>([]);
 
+  // Community-submitted reports, seeded from the pilot data and persisted in
+  // localStorage so a resident's own reports stay visible after a refresh.
+  // Nothing here is sent to a backend or to Ottawa 311 — this is a local,
+  // browser-only awareness feed by design.
+  const [issues, setIssues] = useState<Issue[]>(() => {
+    if (typeof window === "undefined") return INITIAL_ISSUES;
+    try {
+      const saved = window.localStorage.getItem("localvoice-open-reports");
+      return saved ? JSON.parse(saved) : INITIAL_ISSUES;
+    } catch {
+      return INITIAL_ISSUES;
+    }
+  });
+
   // Real map state: user's live location, and the draft pin they drop to report a new issue.
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [locatingUser, setLocatingUser] = useState(true);
@@ -329,6 +356,10 @@ export default function App() {
     window.localStorage.setItem("localvoice-saved-issues", JSON.stringify(savedIssueIds));
   }, [savedIssueIds]);
 
+  useEffect(() => {
+    window.localStorage.setItem("localvoice-open-reports", JSON.stringify(issues));
+  }, [issues]);
+
   const scrollTo = (id: string) => {
     setActiveSection(id);
     setMenuOpen(false);
@@ -365,14 +396,38 @@ export default function App() {
 
   const handleReport = (e: FormEvent) => {
     e.preventDefault();
+
+    // Use the pin the resident dropped on the map; if they typed a location
+    // manually without clicking the map, fall back to their live location
+    // (or the Ottawa center) so the report still gets created instead of
+    // silently doing nothing.
+    const pin = draftPin ?? (userLocation ? { lat: userLocation[0], lng: userLocation[1] } : { lat: OTTAWA_CENTER[0], lng: OTTAWA_CENTER[1] });
+
+    const newIssue: Issue = {
+      id: Date.now(),
+      title: reportForm.title.trim(),
+      category: reportForm.category,
+      status: "Open",
+      date: new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      votes: 0,
+      lat: pin.lat,
+      lng: pin.lng,
+      description: reportForm.description.trim(),
+    };
+
+    setIssues((prev) => [newIssue, ...prev]);
     setReportSubmitted(true);
-    setTimeout(() => setReportSubmitted(false), 4000);
+    setTimeout(() => setReportSubmitted(false), 5000);
     setReportForm({ title: "", category: "Roads", description: "", location: "" });
     setDraftPin(null);
   };
 
   const visibleIssues =
-    filterCategory === "All" ? ISSUES : ISSUES.filter((i) => i.category === filterCategory);
+    filterCategory === "All" ? issues : issues.filter((i) => i.category === filterCategory);
 
   const visibleContacts = CONTACTS.filter(
     (c) =>
@@ -660,15 +715,24 @@ export default function App() {
               </p>
 
               {reportSubmitted ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center gap-4">
-                  <div className="w-12 h-12 rounded-sm bg-green-50 border border-green-200 flex items-center justify-center">
-                    <CheckCircle size={22} className="text-green-700" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground mb-1">Report submitted</p>
-                    <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
-                      Your issue has been logged. Check your email for a 311 reference number within 24 hours.
+                <div className="space-y-4 py-6">
+                  <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="font-semibold text-emerald-800">Report added to Open Reports</p>
+                    <p className="text-sm text-emerald-700 mt-1">
+                      This is a community awareness post, not an automatic 311 submission.
                     </p>
+                  </div>
+
+                  <div className="rounded-sm border border-border bg-secondary p-4">
+                    <p className="text-sm font-semibold text-foreground mb-2">Need urgent help?</p>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      For urgent city issues, use Ottawa's official 311 channels:
+                    </p>
+                    <ul className="text-sm text-foreground space-y-1">
+                      <li>&bull; Call 3-1-1</li>
+                      <li>&bull; Visit ottawa.ca/311</li>
+                      <li>&bull; Email client.services@ottawa.ca</li>
+                    </ul>
                   </div>
                 </div>
               ) : (
