@@ -1,8 +1,10 @@
 packages:
   - '.'
 allowBuilds:
+  '@firebase/util': set this to true or false
   '@tailwindcss/oxide': true
   esbuild: false
+  protobufjs: set this to true or false
 supportedArchitectures:
   os:
     - linux

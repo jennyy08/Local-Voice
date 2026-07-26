@@ -24,200 +24,24 @@ import {
   Building2, ExternalLink, ThumbsUp, Moon, Sun, Bookmark, BookmarkCheck,
 } from "lucide-react";
 
+import { CONTACTS } from "../data/contacts";
+import { LEARN_SECTIONS } from "../data/learnSections";
+import { SEED_ISSUES } from "../data/seedIssues";
+import {
+    CATEGORY_CONFIG,
+    STATUS_CONFIG,
+    NAV_LINKS,
+    OTTAWA_CENTER,
+} from "../data/constants";
+
+import type { Issue } from "../types/issue";
+import Navbar from "./components/Navbar";
+
 // ── Data ─────────────────────────────────────────────────────────────────────
-
-// Ottawa fallback center, used if geolocation is denied/unavailable.
-const OTTAWA_CENTER: [number, number] = [45.4215, -75.6919];
-
-type Issue = {
-  id: string;
-  title: string;
-  category: string;
-  status: string;
-  date: string;
-  votes: number;
-  lat: number;
-  lng: number;
-  description: string;
-  photo?: string;
-};
 
 // Seed data used to populate Firestore the very first time the "reports"
 // collection is empty (e.g. a brand new Firebase project). After that,
 // Firestore is the single source of truth shared by every visitor.
-type SeedIssue = Omit<Issue, "id">;
-const SEED_ISSUES: SeedIssue[] = [
-  {
-    title: "Pothole on Elgin St near Gladstone",
-    category: "Roads",
-    status: "In Review",
-    date: "Jul 18, 2026",
-    votes: 12,
-    lat: 45.4126,
-    lng: -75.6902,
-    description: "Large pothole ~30cm wide. Caused two flat tires in three days.",
-  },
-  {
-    title: "Broken streetlight — Bank & Third Ave",
-    category: "Lighting",
-    status: "Resolved",
-    date: "Jul 10, 2026",
-    votes: 8,
-    lat: 45.3985,
-    lng: -75.6934,
-    description: "Streetlight out for six weeks. Corner is unsafe at night.",
-  },
-  {
-    title: "Overflowing recycling bins at Glebe Community Ctr",
-    category: "Waste",
-    status: "Pending",
-    date: "Jul 21, 2026",
-    votes: 5,
-    lat: 45.3958,
-    lng: -75.6906,
-    description: "Bins not collected since July 14. Material scattered on sidewalk.",
-  },
-  {
-    title: "Cracked sidewalk — Lyon St between Lisgar & James",
-    category: "Roads",
-    status: "In Review",
-    date: "Jul 19, 2026",
-    votes: 19,
-    lat: 45.4172,
-    lng: -75.7010,
-    description: "Large crack creating trip hazard for strollers and wheelchair users.",
-  },
-  {
-    title: "Fallen tree branch blocking Chamberlain Ave bike lane",
-    category: "Parks",
-    status: "Resolved",
-    date: "Jul 8, 2026",
-    votes: 7,
-    lat: 45.3903,
-    lng: -75.7038,
-    description: "Storm debris not cleared after last weekend's storm.",
-  },
-  {
-    title: "Graffiti on utility box — Bronson near Carling",
-    category: "Graffiti",
-    status: "Pending",
-    date: "Jul 22, 2026",
-    votes: 3,
-    lat: 45.3877,
-    lng: -75.7075,
-    description: "New graffiti appeared overnight on city utility box.",
-  },
-];
-
-const CONTACTS = [
-  {
-    name: "Coun. Ariel Troster",
-    role: "City Councillor, Somerset Ward 14",
-    phone: "613-580-2483",
-    email: "ariel.troster@ottawa.ca",
-  },
-  {
-    name: "City of Ottawa 311",
-    role: "General Service Requests & Non-Emergency Issues",
-    phone: "3-1-1",
-    email: "client.services@ottawa.ca",
-  },
-  {
-    name: "Roads & Traffic Management",
-    role: "Potholes, Road Repair, Traffic Signals",
-    phone: "613-580-2400",
-    email: "roads@ottawa.ca",
-  },
-  {
-    name: "Waste Management Services",
-    role: "Garbage, Recycling & Composting Pickup",
-    phone: "613-580-2400",
-    email: "recycle@ottawa.ca",
-  },
-  {
-    name: "Ottawa Public Health",
-    role: "Environmental Health & Safety Concerns",
-    phone: "613-580-6744",
-    email: "health@ottawa.ca",
-  },
-  {
-    name: "Ottawa By-law Services",
-    role: "Property Standards, Noise, Animals",
-    phone: "613-580-2400",
-    email: "bylaw@ottawa.ca",
-  },
-];
-
-const LEARN_SECTIONS = [
-  {
-    id: "council",
-    label: "City Council",
-    heading: "Who Makes Decisions at City Hall?",
-    body: [
-      "Ottawa City Council is made up of the Mayor and 24 City Councillors — one elected per ward. Council meets roughly every three weeks to debate and vote on city policy, budgets, bylaws, and development applications.",
-      "Your Councillor is your most direct line to city government. They sit on committees, raise ward issues, and can escalate urgent concerns on your behalf. Unlike federal or provincial politics, your city councillor lives in your neighbourhood.",
-    ],
-    stat: "24",
-    statLabel: "wards in Ottawa, each with an elected Councillor",
-  },
-  {
-    id: "report",
-    label: "After You Report",
-    heading: "What Happens to Your Report?",
-    body: [
-      "When you submit a 311 request or file through Local Voice, your report is assigned a service request number and routed to the relevant city department. Roads issues go to Public Works. Parks issues go to Recreation & Parks.",
-      "The department reviews, prioritizes, and schedules a response. Straightforward repairs may be resolved within days. Complex issues involving infrastructure or safety may require a site visit and Council approval. Save your reference number to track progress.",
-    ],
-    stat: "15",
-    statLabel: "business days — average first response time for a 311 request",
-  },
-  {
-    id: "budget",
-    label: "City Budget",
-    heading: "Where Does Your Tax Dollar Go?",
-    body: [
-      "Ottawa's operating budget is over $5 billion annually. The largest shares fund Ottawa Police Service (~$400M), OC Transpo, Ottawa Community Housing, and infrastructure maintenance across the city's roads, water systems, and buildings.",
-      "Capital projects — bridges, recreation centres, road reconstruction — are funded through a separate Capital Budget approved by Council each fall. Residents can participate in ward-level budget consultations, usually held in October and November.",
-    ],
-    stat: "$5.1B",
-    statLabel: "Ottawa's 2026 operating budget — your taxes at work",
-  },
-  {
-    id: "participate",
-    label: "Get Involved",
-    heading: "Beyond Reporting — Real Participation",
-    body: [
-      "Residents can engage Ottawa's civic life in many ways: attending public consultations on official plans and bylaws, delegating at a committee meeting, joining a community association, signing a petition, or running for Council.",
-      "Public delegations take as little as ten minutes. You register online, appear at City Hall or virtually, and speak directly to Councillors. It is one of the most powerful — and underused — forms of civic participation available to any Ottawa resident.",
-    ],
-    stat: "10 min",
-    statLabel: "typical public delegation at Ottawa City Hall",
-  },
-];
-
-const CATEGORY_CONFIG: Record<string, { color: string; bg: string }> = {
-  Roads: { color: "#DC4E28", bg: "#FEF2EE" },
-  Lighting: { color: "#A96200", bg: "#FEF7E8" },
-  Waste: { color: "#1A7A4A", bg: "#EBF9F0" },
-  Parks: { color: "#1E6E8A", bg: "#EAF4F9" },
-  Graffiti: { color: "#6B2D8E", bg: "#F5EDF9" },
-  "Snow & Ice": { color: "#1D4ED8", bg: "#EEF3FE" },
-};
-
-const STATUS_CONFIG: Record<string, { color: string; bg: string; Icon: typeof CheckCircle }> = {
-  Open: { color: "#92400E", bg: "#FEF3C7", Icon: AlertCircle },
-  Pending: { color: "#92400E", bg: "#FEF3C7", Icon: AlertCircle },
-  "In Review": { color: "#1E3A8A", bg: "#DBEAFE", Icon: Clock },
-  Resolved: { color: "#14532D", bg: "#DCFCE7", Icon: CheckCircle },
-};
-
-const NAV_LINKS = [
-  { id: "home", label: "Home" },
-  { id: "map", label: "Report" },
-  { id: "issues", label: "Issues" },
-  { id: "learn", label: "Learn" },
-  { id: "directory", label: "Directory" },
-];
 
 // ── Leaflet helpers ────────────────────────────────────────────────────────
 
@@ -572,74 +396,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
-      {/* ── Nav ────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-primary/95 backdrop-blur-sm border-b border-white/10">
-        <div className="w-full px-4 sm:px-6 flex items-center justify-between h-14">
-          <button onClick={() => scrollTo("home")} className="flex items-center gap-2.5 group">
-            <div className="w-7 h-7 bg-accent rounded-sm flex items-center justify-center">
-              <MapPin size={13} className="text-primary" />
-            </div>
-            <span className="font-display text-lg text-primary-foreground tracking-tight">Local Voice</span>
-          </button>
-
-          <div className="hidden md:flex items-center gap-0.5">
-            {NAV_LINKS.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => scrollTo(l.id)}
-                className={`px-4 py-2 text-xs font-mono tracking-widest uppercase transition-colors rounded-sm ${
-                  activeSection === l.id
-                    ? "bg-accent/15 text-accent"
-                    : "text-primary-foreground/50 hover:text-primary-foreground"
-                }`}
-              >
-                {l.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setDarkMode((prev) => !prev)}
-              className="ml-2 rounded-sm border border-white/15 p-2 text-primary-foreground/70 transition-colors hover:text-primary-foreground"
-              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {darkMode ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => setDarkMode((prev) => !prev)}
-              className="rounded-sm border border-white/15 p-2 text-primary-foreground/70 transition-colors hover:text-primary-foreground"
-              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {darkMode ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-            <button
-              type="button"
-              className="text-primary-foreground/70 hover:text-primary-foreground p-1"
-              onClick={() => setMenuOpen(!menuOpen)}
-              aria-label="Toggle navigation menu"
-            >
-              {menuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-          </div>
-        </div>
-
-        {menuOpen && (
-          <div className="md:hidden bg-primary border-t border-white/10 px-4 py-2 pb-4 space-y-0.5">
-            {NAV_LINKS.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => scrollTo(l.id)}
-                className="block w-full text-left px-3 py-3 text-xs font-mono tracking-widest uppercase text-primary-foreground/60 hover:text-primary-foreground transition-colors border-b border-white/5 last:border-0"
-              >
-                {l.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </nav>
+      <Navbar
+        activeSection={activeSection}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        scrollTo={scrollTo}
+      />
 
       {/* ── Hero ───────────────────────────────────────────────────── */}
       <section id="home" className="pt-14 min-h-screen grid md:grid-cols-[1fr_1fr]">
