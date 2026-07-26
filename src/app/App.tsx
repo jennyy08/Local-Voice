@@ -11,8 +11,11 @@ import {
   orderBy,
   serverTimestamp,
   limit as fsLimit,
+  doc,
+  updateDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
 import { db, storage } from "../lib/firebase";
 import {
   MapPin, Camera, Phone, BookOpen, Search, Menu, X,
@@ -427,8 +430,16 @@ export default function App() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const handleVote = (id: string) =>
-    setVotes((prev) => ({ ...prev, [id]: !prev[id] }));
+  const handleVote = async (issue: Issue) => {
+  try {
+    const issueRef = doc(db, "reports", issue.id);
+    await updateDoc(issueRef, {
+      votes: issue.votes + 1,
+    });
+  } catch (err) {
+    console.error("Failed to update support:", err);
+    }
+  };
 
   const toggleSavedIssue = (id: string) => {
     setSavedIssueIds((prev) =>
@@ -686,10 +697,15 @@ export default function App() {
           </div>
 
           {/* Grant badge */}
-          <div className="absolute top-6 right-6 bg-primary/80 backdrop-blur-sm border border-white/15 rounded-sm px-3 py-2">
+          <a
+            href="https://glocalfoundation.ca"
+            target="_blank"
+            rel="noreferrer"
+            className="absolute top-6 right-6 bg-primary/80 backdrop-blur-sm border border-white/15 rounded-sm px-3 py-2 hover:bg-primary/90 transition-colors"
+          >
             <p className="text-[10px] font-mono text-accent tracking-widest uppercase">CANConnect</p>
             <p className="text-[10px] font-mono text-primary-foreground/50 mt-0.5">GLOCAL Foundation</p>
-          </div>
+          </a>
         </div>
       </section>
 
@@ -1045,7 +1061,7 @@ export default function App() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleVote(issue.id);
+                          handleVote(issue);
                         }}
                         className={`flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1.5 rounded-sm border transition-colors ${
                           hasVoted
@@ -1054,7 +1070,7 @@ export default function App() {
                         }`}
                       >
                         <ThumbsUp size={9} />
-                        {issue.votes + (hasVoted ? 1 : 0)} support
+                        {issue.votes} support
                       </button>
                     </div>
                   </div>
@@ -1239,9 +1255,14 @@ export default function App() {
             <p className="text-primary-foreground/40 text-sm leading-relaxed max-w-xs">
               A civic-tech pilot enabling Ottawa residents to report local issues, track city responses, and increase informed participation in municipal government.
             </p>
-            <p className="text-primary-foreground/30 text-xs font-mono mt-4 leading-relaxed">
+            <a
+              href="https://glocalfoundation.ca"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary-foreground/30 text-xs font-mono mt-4 leading-relaxed inline-block hover:text-primary-foreground/60 transition-colors"
+            >
               Supported by GLOCAL Foundation&apos;s CANConnect Micro-grant program (Canada Service Corps).
-            </p>
+            </a>
           </div>
 
           <div>
@@ -1263,19 +1284,22 @@ export default function App() {
             <p className="font-mono text-[10px] text-accent/70 tracking-[0.2em] uppercase mb-4">Resources</p>
             <div className="space-y-2.5">
               {[
-                "ottawa.ca / 311",
-                "Ottawa Ward Finder",
-                "City Council Calendar",
-                "Budget Consultations",
-                "Public Delegations",
-              ].map((r) => (
-                <div
-                  key={r}
-                  className="flex items-center gap-1.5 text-sm text-primary-foreground/40 hover:text-primary-foreground/80 transition-colors cursor-pointer"
+                { label: "ottawa.ca / 311", href: "https://ottawa.ca/en/3-1-1" },
+                { label: "Ottawa Ward Finder", href: "https://ottawa.ca/en/city-hall/council-committees-and-boards/how-city-government-works/find-your-ward-and-councillor" },
+                { label: "City Council Calendar", href: "https://ottawa.ca/en/city-hall/council-committees-and-boards/agendas-minutes-and-videos/meetings-agendas-and-minutes" },
+                { label: "Budget Consultations", href: "https://ottawa.ca/en/city-hall/council-committees-and-boards/agendas-minutes-and-videos/meetings-agendas-and-minutes" },
+                { label: "Public Delegations", href: "https://ottawa.ca/en/city-hall/city-manager-administration-and-policies/policies/administrative-policies/delegation-powers-policy" },
+              ].map((resource) => (
+                <a
+                  key={resource.label}
+                  href={resource.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-primary-foreground/40 hover:text-primary-foreground/80 transition-colors"
                 >
-                  {r}
+                  {resource.label}
                   <ExternalLink size={9} className="flex-shrink-0" />
-                </div>
+                </a>
               ))}
             </div>
           </div>
@@ -1360,7 +1384,7 @@ export default function App() {
                 <div className="rounded-sm border border-border bg-secondary p-3">
                   <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Support</p>
                   <p className="text-sm text-foreground">
-                    {selectedIssue.votes + (votes[selectedIssue.id] ? 1 : 0)} residents
+                    {selectedIssue.votes} residents
                   </p>
                 </div>
                 <div className="rounded-sm border border-border bg-secondary p-3 col-span-2">
@@ -1386,7 +1410,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleVote(selectedIssue.id)}
+                  onClick={() => handleVote(selectedIssue)}
                   className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border transition-colors ${
                     votes[selectedIssue.id]
                       ? "bg-accent/10 border-accent/30 text-accent"
