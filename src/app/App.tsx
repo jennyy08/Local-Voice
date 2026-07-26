@@ -13,6 +13,7 @@ import {
   limit as fsLimit,
   doc,
   updateDoc,
+  increment,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -430,14 +431,30 @@ export default function App() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Supports a report for everyone (real Firestore write, not just local
+  // state). Uses increment() so concurrent votes from different visitors
+  // don't clobber each other. Each browser can only support a given report
+  // once per session — this isn't real per-user auth, just a lightweight
+  // guard against accidental double-clicks/spam for a pilot.
   const handleVote = async (issue: Issue) => {
-  try {
-    const issueRef = doc(db, "reports", issue.id);
-    await updateDoc(issueRef, {
-      votes: issue.votes + 1,
-    });
-  } catch (err) {
-    console.error("Failed to update support:", err);
+    if (votes[issue.id]) return; // already supported this session
+
+    setVotes((prev) => ({ ...prev, [issue.id]: true })); // optimistic
+
+    try {
+      const issueRef = doc(db, "reports", issue.id);
+      await updateDoc(issueRef, {
+        votes: increment(1),
+      });
+    } catch (err) {
+      console.error("Failed to update support:", err);
+      // Roll back the optimistic local state so the button re-enables —
+      // most likely cause is Firestore rules blocking the update.
+      setVotes((prev) => {
+        const next = { ...prev };
+        delete next[issue.id];
+        return next;
+      });
     }
   };
 
@@ -545,6 +562,13 @@ export default function App() {
 
   const activeLearn = LEARN_SECTIONS.find((s) => s.id === learnTab)!;
   const mapCenter = userLocation ?? OTTAWA_CENTER;
+
+  // Keep the modal in sync with the live Firestore feed — selectedIssue is
+  // just "which report is open," the actual data (like vote count) always
+  // comes from the current `issues` list so it updates in real time.
+  const modalIssue = selectedIssue
+    ? issues.find((i) => i.id === selectedIssue.id) ?? selectedIssue
+    : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
@@ -1059,18 +1083,19 @@ export default function App() {
                       </button>
                       <button
                         type="button"
+                        disabled={hasVoted}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleVote(issue);
                         }}
                         className={`flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1.5 rounded-sm border transition-colors ${
                           hasVoted
-                            ? "bg-accent/10 border-accent/30 text-accent"
+                            ? "bg-accent/10 border-accent/30 text-accent cursor-default"
                             : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                         }`}
                       >
                         <ThumbsUp size={9} />
-                        {issue.votes} support
+                        {issue.votes} {hasVoted ? "supported" : "support"}
                       </button>
                     </div>
                   </div>
@@ -1316,7 +1341,7 @@ export default function App() {
       </footer>
 
       {/* ── Report Detail Modal ────────────────────────────────────── */}
-      {selectedIssue && (
+      {modalIssue && (
         <div
           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
           onClick={(e) => {
@@ -1324,10 +1349,10 @@ export default function App() {
           }}
         >
           <div className="bg-card border border-border rounded-sm shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
-            {selectedIssue.photo && (
+            {modalIssue.photo && (
               <img
-                src={selectedIssue.photo}
-                alt={selectedIssue.title}
+                src={modalIssue.photo}
+                alt={modalIssue.title}
                 className="w-full h-48 object-cover"
               />
             )}
@@ -1338,14 +1363,14 @@ export default function App() {
                   <span
                     className="text-[10px] font-mono px-2 py-1 rounded-sm tracking-wide"
                     style={{
-                      color: (CATEGORY_CONFIG[selectedIssue.category] || { color: "#555" }).color,
-                      backgroundColor: (CATEGORY_CONFIG[selectedIssue.category] || { bg: "#eee" }).bg,
+                      color: (CATEGORY_CONFIG[modalIssue.category] || { color: "#555" }).color,
+                      backgroundColor: (CATEGORY_CONFIG[modalIssue.category] || { bg: "#eee" }).bg,
                     }}
                   >
-                    {selectedIssue.category}
+                    {modalIssue.category}
                   </span>
                   {(() => {
-                    const statusCfg = STATUS_CONFIG[selectedIssue.status];
+                    const statusCfg = STATUS_CONFIG[modalIssue.status];
                     const StatusIcon = statusCfg.Icon;
                     return (
                       <span
@@ -1353,7 +1378,7 @@ export default function App() {
                         style={{ color: statusCfg.color, backgroundColor: statusCfg.bg }}
                       >
                         <StatusIcon size={9} />
-                        {selectedIssue.status}
+                        {modalIssue.status}
                       </span>
                     );
                   })()}
@@ -1369,28 +1394,28 @@ export default function App() {
               </div>
 
               <h3 className="font-display text-2xl text-foreground tracking-tight mb-3">
-                {selectedIssue.title}
+                {modalIssue.title}
               </h3>
 
               <p className="text-sm text-muted-foreground leading-relaxed mb-5">
-                {selectedIssue.description}
+                {modalIssue.description}
               </p>
 
               <div className="grid grid-cols-2 gap-3 mb-5">
                 <div className="rounded-sm border border-border bg-secondary p-3">
                   <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Filed</p>
-                  <p className="text-sm text-foreground">{selectedIssue.date}</p>
+                  <p className="text-sm text-foreground">{modalIssue.date}</p>
                 </div>
                 <div className="rounded-sm border border-border bg-secondary p-3">
                   <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Support</p>
                   <p className="text-sm text-foreground">
-                    {selectedIssue.votes} residents
+                    {modalIssue.votes} residents
                   </p>
                 </div>
                 <div className="rounded-sm border border-border bg-secondary p-3 col-span-2">
                   <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Location</p>
                   <p className="text-sm text-foreground font-mono">
-                    {selectedIssue.lat.toFixed(5)}, {selectedIssue.lng.toFixed(5)}
+                    {modalIssue.lat.toFixed(5)}, {modalIssue.lng.toFixed(5)}
                   </p>
                 </div>
               </div>
@@ -1398,27 +1423,28 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => toggleSavedIssue(selectedIssue.id)}
+                  onClick={() => toggleSavedIssue(modalIssue.id)}
                   className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border transition-colors ${
-                    savedIssueIds.includes(selectedIssue.id)
+                    savedIssueIds.includes(modalIssue.id)
                       ? "bg-accent/10 border-accent/30 text-accent"
                       : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                   }`}
                 >
-                  {savedIssueIds.includes(selectedIssue.id) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
-                  {savedIssueIds.includes(selectedIssue.id) ? "Saved" : "Save"}
+                  {savedIssueIds.includes(modalIssue.id) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+                  {savedIssueIds.includes(modalIssue.id) ? "Saved" : "Save"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleVote(selectedIssue)}
+                  disabled={!!votes[modalIssue.id]}
+                  onClick={() => handleVote(modalIssue)}
                   className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border transition-colors ${
-                    votes[selectedIssue.id]
-                      ? "bg-accent/10 border-accent/30 text-accent"
+                    votes[modalIssue.id]
+                      ? "bg-accent/10 border-accent/30 text-accent cursor-default"
                       : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                   }`}
                 >
                   <ThumbsUp size={12} />
-                  Support
+                  {votes[modalIssue.id] ? "Supported" : "Support"}
                 </button>
               </div>
             </div>
