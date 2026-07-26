@@ -1,6 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import L from "leaflet";
-//@ts-ignore
 import "leaflet/dist/leaflet.css";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import {
@@ -24,6 +23,7 @@ type Issue = {
   lat: number;
   lng: number;
   description: string;
+  photo?: string;
 };
 
 // Seed data for the Open Reports feed. Once a resident submits their own
@@ -296,6 +296,13 @@ export default function App() {
   const [locatingUser, setLocatingUser] = useState(true);
   const [draftPin, setDraftPin] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Detail modal: which report (if any) is currently expanded for a closer look.
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+
+  // Photo attached to the report currently being drafted, stored as a data URL
+  // (kept in memory/localStorage only — nothing is uploaded to a server).
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("localvoice-theme");
     const storedDraft = window.localStorage.getItem("localvoice-report-form");
@@ -360,6 +367,21 @@ export default function App() {
     window.localStorage.setItem("localvoice-open-reports", JSON.stringify(issues));
   }, [issues]);
 
+  // Close the detail modal on Escape, and lock body scroll while it's open.
+  useEffect(() => {
+    if (!selectedIssue) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedIssue(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [selectedIssue]);
+
   const scrollTo = (id: string) => {
     setActiveSection(id);
     setMenuOpen(false);
@@ -394,6 +416,19 @@ export default function App() {
       });
   };
 
+  // Reads the selected photo file into a data URL so it can be stored alongside
+  // the report (localStorage only — no server upload).
+  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setPhotoDataUrl(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setPhotoDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
   const handleReport = (e: FormEvent) => {
     e.preventDefault();
 
@@ -417,6 +452,7 @@ export default function App() {
       lat: pin.lat,
       lng: pin.lng,
       description: reportForm.description.trim(),
+      photo: photoDataUrl ?? undefined,
     };
 
     setIssues((prev) => [newIssue, ...prev]);
@@ -424,6 +460,7 @@ export default function App() {
     setTimeout(() => setReportSubmitted(false), 5000);
     setReportForm({ title: "", category: "Roads", description: "", location: "" });
     setDraftPin(null);
+    setPhotoDataUrl(null);
   };
 
   const visibleIssues =
@@ -442,7 +479,7 @@ export default function App() {
     <div className="min-h-screen bg-background text-foreground font-sans">
       {/* ── Nav ────────────────────────────────────────────────────── */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-primary/95 backdrop-blur-sm border-b border-white/10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
+        <div className="w-full px-4 sm:px-6 flex items-center justify-between h-14">
           <button onClick={() => scrollTo("home")} className="flex items-center gap-2.5 group">
             <div className="w-7 h-7 bg-accent rounded-sm flex items-center justify-center">
               <MapPin size={13} className="text-primary" />
@@ -797,11 +834,25 @@ export default function App() {
                     <label className="block text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-1.5">
                       Photo — optional
                     </label>
-                    <label className="flex items-center gap-3 border-2 border-dashed border-border rounded-sm p-3 cursor-pointer hover:border-accent/40 transition-colors group">
-                      <Camera size={16} className="text-muted-foreground group-hover:text-accent transition-colors flex-shrink-0" />
-                      <span className="text-sm text-muted-foreground">Upload a photo of the issue</span>
-                      <input type="file" accept="image/*" className="hidden" />
-                    </label>
+                    {photoDataUrl ? (
+                      <div className="relative rounded-sm overflow-hidden border border-border">
+                        <img src={photoDataUrl} alt="Selected issue" className="w-full h-32 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPhotoDataUrl(null)}
+                          className="absolute top-2 right-2 bg-primary/80 text-primary-foreground rounded-sm p-1.5 hover:bg-primary transition-colors"
+                          aria-label="Remove photo"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-3 border-2 border-dashed border-border rounded-sm p-3 cursor-pointer hover:border-accent/40 transition-colors group">
+                        <Camera size={16} className="text-muted-foreground group-hover:text-accent transition-colors flex-shrink-0" />
+                        <span className="text-sm text-muted-foreground">Upload a photo of the issue</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+                      </label>
+                    )}
                   </div>
 
                   <button
@@ -868,7 +919,13 @@ export default function App() {
               return (
                 <div
                   key={issue.id}
-                  className="bg-card border border-border rounded-sm p-5 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 group"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedIssue(issue)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") setSelectedIssue(issue);
+                  }}
+                  className="bg-card border border-border rounded-sm p-5 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 group cursor-pointer text-left"
                 >
                   <div className="flex items-start justify-between mb-3 gap-2">
                     <span
@@ -889,14 +946,17 @@ export default function App() {
                   <h3 className="font-semibold text-card-foreground text-sm leading-snug mb-2 group-hover:text-accent transition-colors">
                     {issue.title}
                   </h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">{issue.description}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed mb-4 line-clamp-2">{issue.description}</p>
 
                   <div className="flex items-center justify-between pt-3 border-t border-border gap-2">
                     <span className="font-mono text-[10px] text-muted-foreground">{issue.date}</span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => toggleSavedIssue(issue.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSavedIssue(issue.id);
+                        }}
                         aria-pressed={isSaved}
                         className={`flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1.5 rounded-sm border transition-colors ${
                           isSaved
@@ -909,7 +969,10 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleVote(issue.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleVote(issue.id);
+                        }}
                         className={`flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1.5 rounded-sm border transition-colors ${
                           hasVoted
                             ? "bg-accent/10 border-accent/30 text-accent"
@@ -1153,6 +1216,117 @@ export default function App() {
           </p>
         </div>
       </footer>
+
+      {/* ── Report Detail Modal ────────────────────────────────────── */}
+      {selectedIssue && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedIssue(null);
+          }}
+        >
+          <div className="bg-card border border-border rounded-sm shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            {selectedIssue.photo && (
+              <img
+                src={selectedIssue.photo}
+                alt={selectedIssue.title}
+                className="w-full h-48 object-cover"
+              />
+            )}
+
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className="text-[10px] font-mono px-2 py-1 rounded-sm tracking-wide"
+                    style={{
+                      color: (CATEGORY_CONFIG[selectedIssue.category] || { color: "#555" }).color,
+                      backgroundColor: (CATEGORY_CONFIG[selectedIssue.category] || { bg: "#eee" }).bg,
+                    }}
+                  >
+                    {selectedIssue.category}
+                  </span>
+                  {(() => {
+                    const statusCfg = STATUS_CONFIG[selectedIssue.status];
+                    const StatusIcon = statusCfg.Icon;
+                    return (
+                      <span
+                        className="text-[10px] font-mono px-2 py-1 rounded-sm flex items-center gap-1 tracking-wide"
+                        style={{ color: statusCfg.color, backgroundColor: statusCfg.bg }}
+                      >
+                        <StatusIcon size={9} />
+                        {selectedIssue.status}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIssue(null)}
+                  className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <h3 className="font-display text-2xl text-foreground tracking-tight mb-3">
+                {selectedIssue.title}
+              </h3>
+
+              <p className="text-sm text-muted-foreground leading-relaxed mb-5">
+                {selectedIssue.description}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="rounded-sm border border-border bg-secondary p-3">
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Filed</p>
+                  <p className="text-sm text-foreground">{selectedIssue.date}</p>
+                </div>
+                <div className="rounded-sm border border-border bg-secondary p-3">
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Support</p>
+                  <p className="text-sm text-foreground">
+                    {selectedIssue.votes + (votes[selectedIssue.id] ? 1 : 0)} residents
+                  </p>
+                </div>
+                <div className="rounded-sm border border-border bg-secondary p-3 col-span-2">
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Location</p>
+                  <p className="text-sm text-foreground font-mono">
+                    {selectedIssue.lat.toFixed(5)}, {selectedIssue.lng.toFixed(5)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSavedIssue(selectedIssue.id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border transition-colors ${
+                    savedIssueIds.includes(selectedIssue.id)
+                      ? "bg-accent/10 border-accent/30 text-accent"
+                      : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                  }`}
+                >
+                  {savedIssueIds.includes(selectedIssue.id) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+                  {savedIssueIds.includes(selectedIssue.id) ? "Saved" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleVote(selectedIssue.id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border transition-colors ${
+                    votes[selectedIssue.id]
+                      ? "bg-accent/10 border-accent/30 text-accent"
+                      : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                  }`}
+                >
+                  <ThumbsUp size={12} />
+                  Support
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
