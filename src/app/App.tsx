@@ -36,13 +36,13 @@ import {
 
 import type { Issue } from "../types/issue";
 import Navbar from "./components/Navbar";
-import Hero from "./components/hero.tsx";
+import Hero from "./components/hero";
 import Directory from "./components/Directory/DirectorySection";
-import Footer from "./components/Footer.tsx";
-import LearnSection from "./components/LearnSection.tsx";
-import IssuesSection from "./components/IssuesSection/IssuesSection.tsx"
-import IssueModal from "./components/IssuesSection/IssueModal.tsx"
-import MapSection from "./components/MapSection/MapSection.tsx"
+import Footer from "./components/Footer";
+import LearnSection from "./components/LearnSection";
+import IssuesSection from "./components/IssuesSection/IssuesSection"
+import IssueModal from "./components/IssuesSection/IssueModal"
+import MapSection from "./components/MapSection/MapSection"
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
