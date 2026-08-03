@@ -118,6 +118,7 @@ export default function App() {
   const [votes, setVotes] = useState<Record<string, boolean>>({});
   const [darkMode, setDarkMode] = useState(false);
   const [savedIssueIds, setSavedIssueIds] = useState<string[]>([]);
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -417,6 +418,12 @@ export default function App() {
     ? issues.find((i) => i.id === selectedIssue.id) ?? selectedIssue
     : null;
 
+  const openReportsCount = issues.filter((issue) => issue.status === "Open").length;
+  const communitySupportsCount = issues.reduce(
+    (total, issue) => total + (Number(issue.votes) || 0),
+    0
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <Navbar
@@ -468,6 +475,10 @@ export default function App() {
         setSelectedIssue={setSelectedIssue}
         toggleSavedIssue={toggleSavedIssue}
         handleVote={handleVote}
+        openReportsCount={openReportsCount}
+        communitySupportsCount={communitySupportsCount}
+        showSavedOnly={showSavedOnly}
+        setShowSavedOnly={setShowSavedOnly}
       />
 
       <LearnSection 

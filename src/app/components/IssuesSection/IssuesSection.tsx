@@ -1,7 +1,7 @@
  
-import { Bookmark, BookmarkCheck, ThumbsUp } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bookmark, BookmarkCheck, ThumbsUp } from "lucide-react";
 import { CATEGORY_CONFIG, STATUS_CONFIG } from "../../../data/constants"; 
-import { type Dispatch, type SetStateAction } from "react"
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
  
 type Issue = {
   id: string; 
@@ -25,6 +25,10 @@ type IssuesSectionProps = {
   setSelectedIssue: (issue: Issue) => void;
   toggleSavedIssue: (id: string) => void;
   handleVote: (issue: Issue) => void;
+  openReportsCount: number;
+  communitySupportsCount: number;
+  showSavedOnly: boolean;
+  setShowSavedOnly: (value: boolean) => void;
 };
 
 export default function IssuesSection({filterCategory,
@@ -36,7 +40,27 @@ export default function IssuesSection({filterCategory,
   setSelectedIssue,
   toggleSavedIssue,
   handleVote,
+  openReportsCount,
+  communitySupportsCount,
+  showSavedOnly,
+  setShowSavedOnly,
 }: IssuesSectionProps) {
+    const displayedIssues = showSavedOnly
+      ? visibleIssues.filter((issue) => savedIssueIds.includes(issue.id))
+      : visibleIssues;
+    const [visibleStart, setVisibleStart] = useState(0);
+    const pageSize = 9;
+
+    useEffect(() => {
+      setVisibleStart(0);
+    }, [filterCategory, showSavedOnly, visibleIssues, savedIssueIds]);
+
+    const visibleDisplayedIssues = displayedIssues.slice(visibleStart, visibleStart + pageSize);
+    const hasPreviousIssues = visibleStart > 0;
+    const hasMoreIssues = visibleStart + pageSize < displayedIssues.length;
+    const currentBatchStart = displayedIssues.length === 0 ? 0 : visibleStart + 1;
+    const currentBatchEnd = Math.min(visibleStart + pageSize, displayedIssues.length);
+
     return (
         <section id="issues" className="bg-background py-20 px-4 sm:px-6">
             <div className="max-w-6xl mx-auto">
@@ -62,13 +86,31 @@ export default function IssuesSection({filterCategory,
                 </div>
             </div>
 
-            <div className="mb-6 flex flex-col gap-2 rounded-sm border border-border bg-card/80 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-6 rounded-sm border border-border bg-card/80 p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                <p className="text-sm font-semibold text-foreground">Polished interactions, no backend required</p>
-                <p className="text-xs text-muted-foreground">Save reports for later and keep your draft in place while you explore the app.</p>
+                    <p className="text-sm font-semibold text-foreground">Community Activity</p>
+                    <p className="text-xs text-muted-foreground">
+                    Residents have submitted {visibleIssues.length} reports to help improve the community.
+                    </p>
                 </div>
-                <div className="rounded-sm border border-border bg-background/70 px-3 py-2 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
-                {savedIssueIds.length} saved locally
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-sm border border-border bg-background/70 px-3 py-2 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                    <span className="block text-[11px] text-foreground">{openReportsCount} open reports</span>
+                    <span className="block text-[10px]">{communitySupportsCount} community supports</span>
+                    </div>
+                    <button
+                    type="button"
+                    onClick={() => setShowSavedOnly(!showSavedOnly)}
+                    className={`rounded-sm border px-3 py-2 text-xs font-mono uppercase tracking-[0.2em] transition-colors ${
+                        showSavedOnly
+                        ? "border-accent/30 bg-accent/10 text-accent"
+                        : "border-border bg-background/70 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                    }`}
+                    >
+                    {showSavedOnly ? "Showing your saved" : `My saved (${savedIssueIds.length})`}
+                    </button>
+                </div>
                 </div>
             </div>
 
@@ -76,13 +118,42 @@ export default function IssuesSection({filterCategory,
                 <div className="rounded-sm border border-dashed border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">
                 Loading community reports…
                 </div>
-            ) : visibleIssues.length === 0 ? (
+            ) : displayedIssues.length === 0 ? (
                 <div className="rounded-sm border border-dashed border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">
-                No issues match this filter yet. Try a different category or reset the view.
+                {showSavedOnly
+                    ? "You haven’t collected any reports yet. Tap a report’s save button to keep it here."
+                    : "No issues match this filter yet. Try a different category or reset the view."}
                 </div>
             ) : (
+                <>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                        Showing {currentBatchStart}-{currentBatchEnd} of {displayedIssues.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setVisibleStart((start) => Math.max(0, start - pageSize))}
+                            disabled={!hasPreviousIssues}
+                            className="rounded-sm border border-border bg-card p-2 text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-foreground/20 hover:bg-background"
+                            aria-label="Show previous reports"
+                        >
+                            <ArrowLeft size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setVisibleStart((start) => start + pageSize)}
+                            disabled={!hasMoreIssues}
+                            className="rounded-sm border border-border bg-card p-2 text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-foreground/20 hover:bg-background"
+                            aria-label="Show next reports"
+                        >
+                            <ArrowRight size={14} />
+                        </button>
+                    </div>
+                </div>
+
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {visibleIssues.map((issue) => {
+                {visibleDisplayedIssues.map((issue) => {
                 const cfg = CATEGORY_CONFIG[issue.category] || { color: "#555", bg: "#eee" };
                 const statusCfg = STATUS_CONFIG[issue.status];
                 const StatusIcon = statusCfg.Icon;
@@ -160,6 +231,8 @@ export default function IssuesSection({filterCategory,
                 );
                 })}
                 </div>
+
+                </>
             )}
             </div>
         </section>
