@@ -12,8 +12,7 @@ import {
   serverTimestamp,
   limit as fsLimit,
   doc,
-  updateDoc,
-  increment,
+  runTransaction,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -201,6 +200,21 @@ export default function App() {
     window.localStorage.setItem("localvoice-saved-issues", JSON.stringify(savedIssueIds));
   }, [savedIssueIds]);
 
+  useEffect(() => {
+    try {
+      const storedVotes = window.localStorage.getItem("localvoice-votes");
+      if (storedVotes) {
+        setVotes(JSON.parse(storedVotes));
+      }
+    } catch {
+      // Ignore invalid saved vote state
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("localvoice-votes", JSON.stringify(votes));
+  }, [votes]);
+
   // Subscribe to the shared "reports" collection in Firestore so every
   // visitor sees the same live feed. Falls back to seeding the pilot data
   // once, the very first time the collection is empty (e.g. a fresh
@@ -268,22 +282,24 @@ export default function App() {
   // once per session — this isn't real per-user auth, just a lightweight
   // guard against accidental double-clicks/spam for a pilot.
   const handleVote = async (issue: Issue) => {
-    if (votes[issue.id]) return; // already supported this session
+    const alreadySupported = !!votes[issue.id];
+    const nextSupported = !alreadySupported;
 
-    setVotes((prev) => ({ ...prev, [issue.id]: true })); // optimistic
+    setVotes((prev) => ({ ...prev, [issue.id]: nextSupported }));
 
     try {
       const issueRef = doc(db, "reports", issue.id);
-      await updateDoc(issueRef, {
-        votes: increment(1),
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(issueRef);
+        const currentVotes = Number(snapshot.data()?.votes ?? 0);
+        const nextVotes = Math.max(0, currentVotes + (nextSupported ? 1 : -1));
+        transaction.update(issueRef, { votes: nextVotes });
       });
     } catch (err) {
       console.error("Failed to update support:", err);
-      // Roll back the optimistic local state so the button re-enables —
-      // most likely cause is Firestore rules blocking the update.
       setVotes((prev) => {
         const next = { ...prev };
-        delete next[issue.id];
+        next[issue.id] = alreadySupported;
         return next;
       });
     }

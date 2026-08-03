@@ -128,11 +128,10 @@ export default function IssueModal ({
                 </button>
                 <button
                 type="button"
-                disabled={!!votes[modalIssue.id]}
                 onClick={() => handleVote(modalIssue)}
                 className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border transition-colors ${
                     votes[modalIssue.id]
-                    ? "bg-accent/10 border-accent/30 text-accent cursor-default"
+                    ? "bg-accent/10 border-accent/30 text-accent"
                     : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                 }`}
                 >

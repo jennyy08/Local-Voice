@@ -141,14 +141,13 @@ export default function IssuesSection({filterCategory,
                         </button>
                         <button
                             type="button"
-                            disabled={hasVoted}
                             onClick={(e) => {
                             e.stopPropagation();
                             handleVote(issue);
                             }}
                             className={`flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1.5 rounded-sm border transition-colors ${
                             hasVoted
-                                ? "bg-accent/10 border-accent/30 text-accent cursor-default"
+                                ? "bg-accent/10 border-accent/30 text-accent"
                                 : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                             }`}
                         >
