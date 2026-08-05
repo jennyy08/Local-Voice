@@ -1,5 +1,5 @@
-import { type Dispatch, type SetStateAction } from "react";
-import { X, Bookmark, BookmarkCheck, ThumbsUp } from "lucide-react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { X, Bookmark, BookmarkCheck, ThumbsUp, ImageOff } from "lucide-react";
 import { CATEGORY_CONFIG, STATUS_CONFIG } from "../../../data/constants";
 
 type Issue = {
@@ -22,6 +22,8 @@ type IssueModalProps = {
   toggleSavedIssue: (id: string) => void;
   votes: Record<string, boolean>;
   handleVote: (issue: Issue) => void;
+  isAdmin?: boolean;
+  handleDelete?: (issueId: string) => void;
 };
 
 export default function IssueModal ({
@@ -31,7 +33,18 @@ export default function IssueModal ({
     toggleSavedIssue,
     votes,
     handleVote,
+    isAdmin,
+    handleDelete,
 }: IssueModalProps) {
+    const [photoFailed, setPhotoFailed] = useState(false);
+
+    // Reset the broken-image state whenever a different report is opened,
+    // so a previous report's failed photo doesn't stick around and hide a
+    // working photo on the next one.
+    useEffect(() => {
+      setPhotoFailed(false);
+    }, [modalIssue?.id]);
+
     if (!modalIssue) return null;
 
     return (
@@ -42,12 +55,19 @@ export default function IssueModal ({
         }}
         >
         <div className="bg-card border border-border rounded-sm shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
-            {modalIssue.photo && (
+            {modalIssue.photo && !photoFailed && (
             <img
                 src={modalIssue.photo}
                 alt={modalIssue.title}
                 className="w-full h-48 object-cover"
+                onError={() => setPhotoFailed(true)}
             />
+            )}
+            {modalIssue.photo && photoFailed && (
+            <div className="w-full h-48 flex flex-col items-center justify-center gap-2 bg-secondary text-muted-foreground">
+                <ImageOff size={20} />
+                <span className="text-xs font-mono">Photo unavailable</span>
+            </div>
             )}
 
             <div className="p-6">
@@ -139,6 +159,16 @@ export default function IssueModal ({
                 {votes[modalIssue.id] ? "Supported" : "Support"}
                 </button>
             </div>
+
+            {isAdmin && handleDelete && (
+                <button
+                type="button"
+                onClick={() => handleDelete(modalIssue.id)}
+                className="w-full mt-2 text-xs font-mono px-3 py-2.5 rounded-sm border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+                >
+                Delete report (admin)
+                </button>
+            )}
             </div>
         </div>
         </div>

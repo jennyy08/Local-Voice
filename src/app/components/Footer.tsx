@@ -1,11 +1,13 @@
 import { NAV_LINKS } from "../../data/constants";   
 import { MapPin, ExternalLink } from "lucide-react";
+import AdminSignIn from "./AdminSignIn.tsx";
 
 type FooterProps = {
     scrollTo: (id: string) => void;
+    isAdmin: boolean;
 };
 
-export default function Footer({ scrollTo }: FooterProps) {    
+export default function Footer({ scrollTo, isAdmin }: FooterProps) {    
     return (
         <footer className="bg-primary border-t border-white/8 py-14 px-4 sm:px-6">
             <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-10">
@@ -27,6 +29,7 @@ export default function Footer({ scrollTo }: FooterProps) {
                 >
                 Supported by GLOCAL Foundation&apos;s CANConnect Micro-grant program (Canada Service Corps).
                 </a>
+                <AdminSignIn isAdmin={isAdmin} />
             </div>
 
             <div>

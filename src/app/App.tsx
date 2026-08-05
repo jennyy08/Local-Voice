@@ -12,11 +12,16 @@ import {
   serverTimestamp,
   limit as fsLimit,
   doc,
+  getDoc,
+  deleteDoc,
   runTransaction,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import heic2any from "heic2any";
-import { db, storage } from "../lib/firebase";
+
+import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
+
+import { db, storage, auth } from "../lib/firebase";
 import {
   MapPin, Camera, Phone, BookOpen, Search, Menu, X,
   Mail, CheckCircle, Clock, AlertCircle, ChevronRight,
@@ -141,6 +146,32 @@ export default function App() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [convertingPhoto, setConvertingPhoto] = useState(false);
+
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        // No one signed in yet (first visit) — sign them in anonymously,
+        // invisibly, so every visitor has a stable uid without any UI.
+        await signInAnonymously(auth);
+        return; // onAuthStateChanged will fire again with the new anon user
+      }
+      setCurrentUser(user);
+
+      // Check if this uid is in the admin collection (i.e. it's you,
+      // signed in with your real email/password account, not anonymous).
+      try {
+        const adminDoc = await getDoc(doc(db, "admins", user.uid));
+        setIsAdmin(adminDoc.exists());
+      } catch {
+        setIsAdmin(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("localvoice-theme");
@@ -313,6 +344,15 @@ export default function App() {
     );
   };
 
+  const handleDelete = async (issueId: string) => {
+    try {
+      await deleteDoc(doc(db, "reports", issueId));
+      setSelectedIssue(null);
+    } catch (err) {
+      console.error("Failed to delete report:", err);
+    }
+  };
+
   // Called when a resident clicks anywhere on the map: drops a draft pin and
   // reverse-geocodes it into a readable address for the report form.
   const handleMapClick = (lat: number, lng: number) => {
@@ -405,6 +445,7 @@ export default function App() {
         description: reportForm.description.trim(),
         photo: photoUrl,
         createdAt: serverTimestamp(),
+        authorUid: auth.currentUser?.uid ?? null
       });
       // No need to manually update `issues` — the Firestore onSnapshot
       // listener above picks up the new report and updates everyone's view.
@@ -513,7 +554,7 @@ export default function App() {
 
       <Directory contactSearch={contactSearch} setContactSearch={setContactSearch} visibleContacts={visibleContacts} />
       
-      <Footer scrollTo={scrollTo}/>
+      <Footer scrollTo={scrollTo} isAdmin={isAdmin} />
       
       <IssueModal
         modalIssue={modalIssue}
@@ -522,6 +563,8 @@ export default function App() {
         toggleSavedIssue={toggleSavedIssue}
         votes={votes}
         handleVote={handleVote}
+        isAdmin={isAdmin}
+        handleDelete={handleDelete}
       />
     </div>
   );
