@@ -15,7 +15,7 @@ import {
   runTransaction,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-
+import heic2any from "heic2any";
 import { db, storage } from "../lib/firebase";
 import {
   MapPin, Camera, Phone, BookOpen, Search, Menu, X,
@@ -140,6 +140,7 @@ export default function App() {
   // in-form preview.
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [convertingPhoto, setConvertingPhoto] = useState(false);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("localvoice-theme");
@@ -332,13 +333,36 @@ export default function App() {
   };
 
   // Keeps the raw File for uploading later, and builds a quick local preview URL.
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      setPhotoFile(null);
-      setPhotoDataUrl(null);
-      return;
+  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  let file = e.target.files?.[0];
+  if (!file) {
+    setPhotoFile(null);
+    setPhotoDataUrl(null);
+    return;
+  }
+
+  // iPhones default to HEIC, which most non-Safari browsers can't render
+  // in <img>. Convert to JPEG client-side before it ever reaches Storage,
+  // so every visitor — not just the poster — can see the photo.
+  const isHeic = file.type === "image/heic" || file.name.toLowerCase().endsWith(".heic");
+    if (isHeic) {
+      setConvertingPhoto(true);
+      try {
+        const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+        const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+        file = new File(
+          [jpegBlob],
+          file.name.replace(/\.heic$/i, ".jpg"),
+          { type: "image/jpeg" }
+        );
+      } catch (err) {
+        console.error("HEIC conversion failed, uploading original file:", err);
+        // Fall through and upload as-is rather than blocking the report entirely.
+      } finally {
+        setConvertingPhoto(false);
+      }
     }
+
     setPhotoFile(file);
     setPhotoDataUrl(URL.createObjectURL(file));
   };

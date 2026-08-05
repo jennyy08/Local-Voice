@@ -43,6 +43,7 @@ export default function MapSection(props: any) { // (You can type these props la
             setPhotoFile={props.setPhotoFile}
             setPhotoDataUrl={props.setPhotoDataUrl}
             handlePhotoChange={props.handlePhotoChange}
+            convertingPhoto={props.convertingPhoto}
           />
         </div>
       </div>

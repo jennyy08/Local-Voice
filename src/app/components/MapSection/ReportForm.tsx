@@ -21,6 +21,7 @@ type ReportFormProps = {
   setPhotoFile: Dispatch<SetStateAction<File | null>>;
   setPhotoDataUrl: Dispatch<SetStateAction<string | null>>;
   handlePhotoChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  convertingPhoto?: boolean;
 };
 
 export default function ReportForm({
@@ -34,6 +35,7 @@ export default function ReportForm({
   setPhotoFile,
   setPhotoDataUrl,
   handlePhotoChange,
+  convertingPhoto,
 }: ReportFormProps) {
   return (
     <div className="lg:col-span-2 bg-card border border-border rounded-sm p-6 shadow-sm">
@@ -128,7 +130,11 @@ export default function ReportForm({
             <label className="block text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-1.5">
               Photo — optional
             </label>
-            {photoDataUrl ? (
+            {convertingPhoto ? (
+              <div className="flex items-center gap-3 border-2 border-dashed border-border rounded-sm p-3 text-sm text-muted-foreground">
+                Converting photo…
+              </div>
+            ) : photoDataUrl ? (
               <div className="relative rounded-sm overflow-hidden border border-border">
                 <img src={photoDataUrl} alt="Selected issue" className="w-full h-32 object-cover" />
                 <button
