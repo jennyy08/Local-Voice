@@ -12,7 +12,8 @@ type Issue = {
   votes: number;
   lat: number;
   lng: number;
-  photo?: string; 
+  photo?: string;
+  authorUid?: string;
 };
 
 type IssueModalProps = {
@@ -24,6 +25,7 @@ type IssueModalProps = {
   handleVote: (issue: Issue) => void;
   isAdmin?: boolean;
   handleDelete?: (issueId: string) => void;
+  currentUserUid?: string;
 };
 
 export default function IssueModal ({
@@ -35,6 +37,7 @@ export default function IssueModal ({
     handleVote,
     isAdmin,
     handleDelete,
+    currentUserUid,
 }: IssueModalProps) {
     const [photoFailed, setPhotoFailed] = useState(false);
 
@@ -46,6 +49,9 @@ export default function IssueModal ({
     }, [modalIssue?.id]);
 
     if (!modalIssue) return null;
+
+    const isOwnReport = !!currentUserUid && modalIssue.authorUid === currentUserUid;
+    const canDelete = !!handleDelete && (isAdmin || isOwnReport);
 
     return (
         <div
@@ -160,13 +166,13 @@ export default function IssueModal ({
                 </button>
             </div>
 
-            {isAdmin && handleDelete && (
+            {canDelete && (
                 <button
                 type="button"
-                onClick={() => handleDelete(modalIssue.id)}
+                onClick={() => handleDelete!(modalIssue.id)}
                 className="w-full mt-2 text-xs font-mono px-3 py-2.5 rounded-sm border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
                 >
-                Delete report (admin)
+                {isAdmin ? "Delete report (admin)" : "Delete my report"}
                 </button>
             )}
             </div>

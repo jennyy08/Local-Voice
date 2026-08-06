@@ -565,6 +565,7 @@ export default function App() {
         handleVote={handleVote}
         isAdmin={isAdmin}
         handleDelete={handleDelete}
+        currentUserUid={currentUser?.uid}
       />
     </div>
   );

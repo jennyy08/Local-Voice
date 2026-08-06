@@ -1,5 +1,5 @@
  
-import { ArrowLeft, ArrowRight, Bookmark, BookmarkCheck, ThumbsUp } from "lucide-react";
+import { Bookmark, BookmarkCheck, ThumbsUp } from "lucide-react";
 import { CATEGORY_CONFIG, STATUS_CONFIG } from "../../../data/constants"; 
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
  
@@ -49,17 +49,13 @@ export default function IssuesSection({filterCategory,
       ? visibleIssues.filter((issue) => savedIssueIds.includes(issue.id))
       : visibleIssues;
     const [visibleStart, setVisibleStart] = useState(0);
-    const pageSize = 9;
 
     useEffect(() => {
       setVisibleStart(0);
     }, [filterCategory, showSavedOnly, visibleIssues, savedIssueIds]);
 
-    const visibleDisplayedIssues = displayedIssues.slice(visibleStart, visibleStart + pageSize);
-    const hasPreviousIssues = visibleStart > 0;
-    const hasMoreIssues = visibleStart + pageSize < displayedIssues.length;
-    const currentBatchStart = displayedIssues.length === 0 ? 0 : visibleStart + 1;
-    const currentBatchEnd = Math.min(visibleStart + pageSize, displayedIssues.length);
+    const visibleDisplayedIssues = displayedIssues.slice(visibleStart, visibleStart + 9);
+    const hasMoreIssues = visibleStart + 9 < displayedIssues.length;
 
     return (
         <section id="issues" className="bg-background py-20 px-4 sm:px-6">
@@ -126,32 +122,6 @@ export default function IssuesSection({filterCategory,
                 </div>
             ) : (
                 <>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
-                        Showing {currentBatchStart}-{currentBatchEnd} of {displayedIssues.length}
-                    </p>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setVisibleStart((start) => Math.max(0, start - pageSize))}
-                            disabled={!hasPreviousIssues}
-                            className="rounded-sm border border-border bg-card p-2 text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-foreground/20 hover:bg-background"
-                            aria-label="Show previous reports"
-                        >
-                            <ArrowLeft size={14} />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setVisibleStart((start) => start + pageSize)}
-                            disabled={!hasMoreIssues}
-                            className="rounded-sm border border-border bg-card p-2 text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-foreground/20 hover:bg-background"
-                            aria-label="Show next reports"
-                        >
-                            <ArrowRight size={14} />
-                        </button>
-                    </div>
-                </div>
-
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {visibleDisplayedIssues.map((issue) => {
                 const cfg = CATEGORY_CONFIG[issue.category] || { color: "#555", bg: "#eee" };
@@ -232,6 +202,17 @@ export default function IssuesSection({filterCategory,
                 })}
                 </div>
 
+                {hasMoreIssues && (
+                    <div className="mt-6 flex justify-center">
+                        <button
+                            type="button"
+                            onClick={() => setVisibleStart((start) => start + 9)}
+                            className="rounded-sm border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-foreground/20 hover:bg-background"
+                        >
+                            Show more
+                        </button>
+                    </div>
+                )}
                 </>
             )}
             </div>

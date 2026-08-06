@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Admin users (managed manually in Firestore)
+    match /admins/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /reports/{reportId} {
+      // Anyone can read the community feed
+      allow read: if true;
+
+      // Authenticated users can submit reports
+      allow create: if request.auth != null
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() < 200
+                    && request.resource.data.description is string
+                    && request.resource.data.description.size() < 2000
+                    && request.resource.data.lat is number
+                    && request.resource.data.lng is number
+                    && request.resource.data.authorUid == request.auth.uid;
+
+      // Either:
+      // 1. Anyone can upvote/downvote by exactly 1, OR
+      // 2. Admins can edit anything
+      allow update: if (
+                          request.resource.data.diff(resource.data)
+                              .affectedKeys()
+                              .hasOnly(['votes'])
+                          &&
+                          (
+                            request.resource.data.votes - resource.data.votes == 1 ||
+                            request.resource.data.votes - resource.data.votes == -1
+                          )
+                        )
+                        ||
+                        exists(
+                          /databases/$(database)/documents/admins/$(request.auth.uid)
+                        );
+
+      // Only admins can delete reports
+      allow delete: if request.auth != null
+              			&& (resource.data.authorUid == request.auth.uid
+                  	|| exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+  }
+}
