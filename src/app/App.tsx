@@ -13,6 +13,7 @@ import {
   limit as fsLimit,
   doc,
   getDoc,
+  setDoc,
   deleteDoc,
   runTransaction,
 } from "firebase/firestore";
@@ -338,6 +339,35 @@ export default function App() {
     }
   };
 
+  const handleFlag = async (issue: Issue) => {
+    try {
+      const issueRef = doc(db, "reports", issue.id);
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(issueRef);
+        const currentFlags = Number(snapshot.data()?.flagCount ?? 0);
+        transaction.update(issueRef, { flagCount: currentFlags + 1 });
+      });
+    } catch (err) {
+      console.error("Failed to flag report:", err);
+    }
+  };
+
+  const checkAndUpdateRateLimit = async (uid: string): Promise<boolean> => {
+    const today = new Date().toISOString().slice(0, 10);
+    const statsRef = doc(db, "userStats", uid);
+    const snapshot = await getDoc(statsRef);
+    const data = snapshot.exists() ? snapshot.data() : null;
+
+    if (data && data.date === today) {
+      if (data.count >= 3) return false;
+      await setDoc(statsRef, { date: today, count: data.count + 1 });
+    } else {
+      await setDoc(statsRef, { date: today, count: 1 });
+    }
+
+    return true;
+  };
+
   const toggleSavedIssue = (id: string) => {
     setSavedIssueIds((prev) =>
       prev.includes(id) ? prev.filter((savedId) => savedId !== id) : [...prev, id]
@@ -410,6 +440,17 @@ export default function App() {
   const handleReport = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setSubmitError("Please wait a moment and try again.");
+      return;
+    }
+
+    const allowed = await checkAndUpdateRateLimit(uid);
+    if (!allowed) {
+      setSubmitError("You've reached the limit of 3 reports per day. Please try again tomorrow.");
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -422,6 +463,15 @@ export default function App() {
         (userLocation
           ? { lat: userLocation[0], lng: userLocation[1] }
           : { lat: OTTAWA_CENTER[0], lng: OTTAWA_CENTER[1] });
+
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        const canSubmit = await checkAndUpdateRateLimit(uid);
+        if (!canSubmit) {
+          setSubmitError("You’ve already submitted 3 reports today. Please try again tomorrow.");
+          return;
+        }
+      }
 
       let photoUrl: string | null = null;
       if (photoFile) {
@@ -566,6 +616,7 @@ export default function App() {
         isAdmin={isAdmin}
         handleDelete={handleDelete}
         currentUserUid={currentUser?.uid}
+        handleFlag={handleFlag}
       />
     </div>
   );

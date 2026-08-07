@@ -44,6 +44,14 @@ service cloud.firestore {
       allow delete: if request.auth != null
               			&& (resource.data.authorUid == request.auth.uid
                   	|| exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+      
+      allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+                  && (request.resource.data.votes - resource.data.votes == 1 ||
+                      request.resource.data.votes - resource.data.votes == -1))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['flagCount'])
+                  && request.resource.data.flagCount - resource.data.flagCount == 1)
+              || (request.auth != null
+                  && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
     }
   }
 }

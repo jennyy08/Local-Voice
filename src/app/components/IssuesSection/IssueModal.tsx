@@ -26,6 +26,7 @@ type IssueModalProps = {
   isAdmin?: boolean;
   handleDelete?: (issueId: string) => void;
   currentUserUid?: string;
+  handleFlag?: (issue: Issue) => void | Promise<void>;
 };
 
 export default function IssueModal ({
@@ -38,8 +39,11 @@ export default function IssueModal ({
     isAdmin,
     handleDelete,
     currentUserUid,
+    handleFlag,
 }: IssueModalProps) {
     const [photoFailed, setPhotoFailed] = useState(false);
+    const [flagged, setFlagged] = useState(false);
+
 
     // Reset the broken-image state whenever a different report is opened,
     // so a previous report's failed photo doesn't stick around and hide a
@@ -166,15 +170,31 @@ export default function IssueModal ({
                 </button>
             </div>
 
-            {canDelete && (
-                <button
-                type="button"
-                onClick={() => handleDelete!(modalIssue.id)}
-                className="w-full mt-2 text-xs font-mono px-3 py-2.5 rounded-sm border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
-                >
-                {isAdmin ? "Delete report (admin)" : "Delete my report"}
-                </button>
-            )}
+            <div className="mt-4 flex flex-col gap-2">
+                {handleFlag && (
+                    <button
+                    type="button"
+                    onClick={async () => {
+                        await handleFlag(modalIssue);
+                        setFlagged(true);
+                    }}
+                    disabled={flagged}
+                    className="text-[10px] font-mono text-muted-foreground/50 hover:text-red-500 transition-colors disabled:opacity-40"
+                    >
+                    {flagged ? "Reported" : "Report this post"}
+                    </button>
+                )}
+
+                {canDelete && (
+                    <button
+                    type="button"
+                    onClick={() => handleDelete!(modalIssue.id)}
+                    className="w-full text-xs font-mono px-3 py-2.5 rounded-sm border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                    {isAdmin ? "Delete report (admin)" : "Delete my report"}
+                    </button>
+                )}
+            </div>
             </div>
         </div>
         </div>
