@@ -45,7 +45,7 @@ export default function MapView({
   draftPinIcon,
 }: MapViewProps) {
   return (
-    <div className="lg:col-span-3 relative rounded-sm overflow-hidden shadow-lg bg-[#E8E2D8]" style={{ height: 460 }}>
+    <div className="lg:col-span-3 relative rounded-sm overflow-hidden shadow-lg bg-[#E8E2D8] z-0" style={{ height: 460 }}>
       {locatingUser && (
         <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-[#E8E2D8]">
           <p className="font-mono text-xs text-muted-foreground tracking-widest uppercase">

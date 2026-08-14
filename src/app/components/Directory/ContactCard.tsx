@@ -1,4 +1,4 @@
-import { Phone, Mail, Building2 } from "lucide-react";
+import { Phone, Mail, User, Headphones, Car, Trash2, HeartPulse, Scale, type LucideIcon } from "lucide-react";
 
 type Contact = {
   name: string;
@@ -7,14 +7,26 @@ type Contact = {
   email: string;
 };
 
+// Map contact names to relevant icons
+const CONTACT_ICONS: Record<string, LucideIcon> = {
+  "Coun. Ariel Troster": User,
+  "City of Ottawa 311": Headphones,
+  "Roads & Traffic Management": Car,
+  "Waste Management Services": Trash2,
+  "Ottawa Public Health": HeartPulse,
+  "Ottawa By-law Services": Scale,
+};
+
 export default function ContactCard({ contact }: { contact: Contact }) {
+  const Icon = CONTACT_ICONS[contact.name] || User;
+
   return (
     <div
       className="bg-card border border-border rounded-sm p-5 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 group"
     >
       <div className="flex items-start gap-3 mb-4">
-        <div className="w-9 h-9 rounded-sm bg-primary/8 border border-border flex items-center justify-center flex-shrink-0">
-          <Building2 size={15} className="text-primary/50" />
+        <div className="w-9 h-9 rounded-sm bg-accent/10 border border-accent/20 flex items-center justify-center flex-shrink-0">
+          <Icon size={16} className="text-accent" />
         </div>
         <div>
           <h3 className="font-semibold text-card-foreground text-sm leading-tight group-hover:text-accent transition-colors">
