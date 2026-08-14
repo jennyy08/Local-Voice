@@ -23,6 +23,7 @@ import heic2any from "heic2any";
 import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
 
 import { db, storage, auth } from "../lib/firebase";
+import { moderateContent } from "../lib/moderation";
 import {
   MapPin, Camera, Phone, BookOpen, Search, Menu, X,
   Mail, CheckCircle, Clock, AlertCircle, ChevronRight,
@@ -140,6 +141,7 @@ export default function App() {
 
   // Detail modal: which report (if any) is currently expanded for a closer look.
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  
 
   // Photo attached to the report currently being drafted. We keep the raw
   // File for uploading to Firebase Storage, plus a data URL just for the
@@ -451,7 +453,30 @@ export default function App() {
       setSubmitError("You've reached the limit of 3 reports per day. Please try again tomorrow.");
       return;
     }
+
+    // Content moderation: check title + description + photo for inappropriate content
     setSubmitting(true);
+
+    // Convert photo to base64 data URL for image moderation (if attached)
+    let imageBase64: string | null = null;
+    if (photoFile) {
+      imageBase64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(photoFile);
+      });
+    }
+
+    const moderation = await moderateContent(
+      reportForm.title,
+      reportForm.description,
+      imageBase64
+    );
+    if (moderation.flagged) {
+      setSubmitError(moderation.reason ?? "Your report contains inappropriate content. Please revise and try again.");
+      setSubmitting(false);
+      return;
+    }
 
     try {
       // Use the pin the resident dropped on the map; if they typed a location
@@ -463,15 +488,6 @@ export default function App() {
         (userLocation
           ? { lat: userLocation[0], lng: userLocation[1] }
           : { lat: OTTAWA_CENTER[0], lng: OTTAWA_CENTER[1] });
-
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        const canSubmit = await checkAndUpdateRateLimit(uid);
-        if (!canSubmit) {
-          setSubmitError("You’ve already submitted 3 reports today. Please try again tomorrow.");
-          return;
-        }
-      }
 
       let photoUrl: string | null = null;
       if (photoFile) {

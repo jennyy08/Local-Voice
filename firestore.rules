@@ -8,6 +8,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Rate-limiting stats: each user can only read/write their own doc
+    match /userStats/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
     match /reports/{reportId} {
       // Anyone can read the community feed
       allow read: if true;
@@ -22,36 +27,28 @@ service cloud.firestore {
                     && request.resource.data.lng is number
                     && request.resource.data.authorUid == request.auth.uid;
 
-      // Either:
-      // 1. Anyone can upvote/downvote by exactly 1, OR
-      // 2. Admins can edit anything
-      allow update: if (
-                          request.resource.data.diff(resource.data)
-                              .affectedKeys()
-                              .hasOnly(['votes'])
-                          &&
-                          (
-                            request.resource.data.votes - resource.data.votes == 1 ||
-                            request.resource.data.votes - resource.data.votes == -1
-                          )
-                        )
-                        ||
-                        exists(
-                          /databases/$(database)/documents/admins/$(request.auth.uid)
-                        );
+      // Authenticated users can vote (+1 or -1) OR flag (+1), OR admins can edit anything
+      allow update: if request.auth != null
+                    && (
+                      // Vote: only the votes field changes by exactly ±1
+                      (
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+                        && (request.resource.data.votes - resource.data.votes == 1
+                            || request.resource.data.votes - resource.data.votes == -1)
+                      )
+                      // Flag: only the flagCount field changes by exactly +1
+                      || (
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['flagCount'])
+                        && request.resource.data.flagCount - resource.data.flagCount == 1
+                      )
+                      // Admin: can update anything
+                      || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+                    );
 
-      // Only admins can delete reports
+      // Author or admin can delete
       allow delete: if request.auth != null
-              			&& (resource.data.authorUid == request.auth.uid
-                  	|| exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
-      
-      allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
-                  && (request.resource.data.votes - resource.data.votes == 1 ||
-                      request.resource.data.votes - resource.data.votes == -1))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['flagCount'])
-                  && request.resource.data.flagCount - resource.data.flagCount == 1)
-              || (request.auth != null
-                  && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+                    && (resource.data.authorUid == request.auth.uid
+                        || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
     }
   }
 }
