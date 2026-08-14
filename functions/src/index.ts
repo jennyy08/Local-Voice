@@ -3,7 +3,9 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
-type ModerationInput = string | { type: "image_url"; image_url: { url: string } };
+type ModerationInput =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 
 // Maximum base64 image size: ~5MB (plenty for a compressed photo)
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -69,7 +71,7 @@ export const moderateContent = onRequest(
 
       const textContent = [title, description].filter(Boolean).join("\n\n");
       if (textContent) {
-        inputs.push(textContent);
+        inputs.push({ type: "text", text: textContent });
       }
 
       if (imageBase64) {
@@ -79,6 +81,11 @@ export const moderateContent = onRequest(
         });
       }
 
+      // Log what we're sending for debugging
+      console.log("Moderation input types:", inputs.map(i => i.type));
+      console.log("Has image:", inputs.some(i => i.type === "image_url"));
+      console.log("Input mode:", inputs.length === 1 && inputs[0].type === "text" ? "text-only string" : "array");
+
       const response = await fetch("https://api.openai.com/v1/moderations", {
         method: "POST",
         headers: {
@@ -87,7 +94,7 @@ export const moderateContent = onRequest(
         },
         body: JSON.stringify({
           model: "omni-moderation-latest",
-          input: inputs,
+          input: inputs.length === 1 && inputs[0].type === "text" ? inputs[0].text : inputs,
         }),
       });
 
@@ -101,15 +108,32 @@ export const moderateContent = onRequest(
       const data = await response.json();
       const result = data.results?.[0];
 
-      if (!result || !result.flagged) {
+      // Log scores for debugging
+      if (result) {
+        console.log("Moderation scores:", JSON.stringify(result.category_scores));
+      }
+
+      if (!result) {
         res.json({ flagged: false, reason: null });
         return;
       }
 
-      // Build readable reason from flagged categories
-      const flaggedCategories = Object.entries(result.categories as Record<string, boolean>)
-        .filter(([, isFlagged]) => isFlagged)
-        .map(([category]) => category.replace(/[/_-]/g, " "));
+      // Custom threshold: flag if ANY category score exceeds 0.15
+      // (OpenAI's default is much higher ~0.7, which misses a lot)
+      const THRESHOLD = 0.15;
+      const flaggedCategories: string[] = [];
+      const scores = result.category_scores as Record<string, number>;
+
+      for (const [category, score] of Object.entries(scores)) {
+        if (score >= THRESHOLD) {
+          flaggedCategories.push(category.replace(/[/_-]/g, " "));
+        }
+      }
+
+      if (flaggedCategories.length === 0) {
+        res.json({ flagged: false, reason: null });
+        return;
+      }
 
       res.json({
         flagged: true,
