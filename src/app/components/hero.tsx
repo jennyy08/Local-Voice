@@ -2,9 +2,17 @@ import { MapPin, BookOpen } from "lucide-react";
 
 type HeroProps = {
   scrollTo: (id: string) => void;
+  issuesFiledCount: number;
+  resolvedCount: number;
+  communitySupportsCount: number;
 };
 
-export default function Hero({ scrollTo }: HeroProps) {
+export default function Hero({
+  scrollTo,
+  issuesFiledCount,
+  resolvedCount,
+  communitySupportsCount,
+}: HeroProps) {
     return (
       <section id="home" className="pt-14 min-h-screen grid md:grid-cols-[1fr_1fr]">
         {/* Left — deep navy panel */}
@@ -41,9 +49,9 @@ export default function Hero({ scrollTo }: HeroProps) {
 
             <div className="mt-16 grid grid-cols-3 gap-6 border-t border-white/10 pt-10">
               {[
-                { n: "30+", label: "Pilot Users" },
-                { n: "6", label: "Issues Filed" },
-                { n: "2", label: "Resolved" },
+                { n: String(issuesFiledCount), label: "Issues Filed" },
+                { n: String(resolvedCount), label: "Resolved" },
+                { n: String(communitySupportsCount), label: "Community Supports" },
               ].map((s) => (
                 <div key={s.label}>
                   <div className="font-display text-3xl text-accent">{s.n}</div>

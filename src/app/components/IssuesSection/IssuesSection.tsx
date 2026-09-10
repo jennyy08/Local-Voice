@@ -1,5 +1,5 @@
  
-import { Bookmark, BookmarkCheck, ThumbsUp } from "lucide-react";
+import { Bookmark, BookmarkCheck, ThumbsUp, ChevronDown } from "lucide-react";
 import { CATEGORY_CONFIG, STATUS_CONFIG } from "../../../data/constants"; 
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
  
@@ -18,6 +18,8 @@ type Issue = {
 type IssuesSectionProps = {
   filterCategory: string;
   setFilterCategory: (category: string) => void;
+  filterStatus: string;
+  setFilterStatus: (status: string) => void;
   savedIssueIds: string[];
   issuesLoading: boolean;
   visibleIssues: Issue[];
@@ -33,6 +35,8 @@ type IssuesSectionProps = {
 
 export default function IssuesSection({filterCategory,
   setFilterCategory,
+  filterStatus,
+  setFilterStatus,
   savedIssueIds,
   issuesLoading,
   visibleIssues,
@@ -45,14 +49,18 @@ export default function IssuesSection({filterCategory,
   showSavedOnly,
   setShowSavedOnly,
 }: IssuesSectionProps) {
+    const statusFilteredIssues =
+      filterStatus === "All"
+        ? visibleIssues
+        : visibleIssues.filter((issue) => issue.status === filterStatus);
     const displayedIssues = showSavedOnly
-      ? visibleIssues.filter((issue) => savedIssueIds.includes(issue.id))
-      : visibleIssues;
+      ? statusFilteredIssues.filter((issue) => savedIssueIds.includes(issue.id))
+      : statusFilteredIssues;
     const [visibleStart, setVisibleStart] = useState(0);
 
     useEffect(() => {
       setVisibleStart(0);
-    }, [filterCategory, showSavedOnly, visibleIssues, savedIssueIds]);
+    }, [filterCategory, filterStatus, showSavedOnly, visibleIssues, savedIssueIds]);
 
     const visibleDisplayedIssues = displayedIssues.slice(visibleStart, visibleStart + 9);
     const hasMoreIssues = visibleStart + 9 < displayedIssues.length;
@@ -65,7 +73,7 @@ export default function IssuesSection({filterCategory,
                 <span className="font-mono text-[10px] text-accent tracking-[0.22em] uppercase">Community</span>
                 <h2 className="font-display text-4xl sm:text-5xl text-foreground mt-2 tracking-tight">Open Reports</h2>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                 {["All", ...Object.keys(CATEGORY_CONFIG)].map((cat) => (
                     <button
                     key={cat}
@@ -79,6 +87,28 @@ export default function IssuesSection({filterCategory,
                     {cat}
                     </button>
                 ))}
+                <div className="relative">
+                    <label className="sr-only" htmlFor="status-filter">Filter by status</label>
+                    <select
+                    id="status-filter"
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className={`appearance-none cursor-pointer rounded-sm border pl-3 pr-7 py-1.5 text-[10px] font-mono tracking-wide transition-colors ${
+                        filterStatus !== "All"
+                        ? "bg-accent/10 text-accent border-accent/30"
+                        : "bg-card text-foreground border-border hover:border-foreground/20"
+                    }`}
+                    >
+                    <option value="All">All Statuses</option>
+                    {Object.keys(STATUS_CONFIG).map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                    ))}
+                    </select>
+                    <ChevronDown
+                    size={12}
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    />
+                </div>
                 </div>
             </div>
 
@@ -118,7 +148,7 @@ export default function IssuesSection({filterCategory,
                 <div className="rounded-sm border border-dashed border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">
                 {showSavedOnly
                     ? "You haven’t collected any reports yet. Tap a report’s save button to keep it here."
-                    : "No issues match this filter yet. Try a different category or reset the view."}
+                    : "No issues match these filters yet. Try a different category or status, or reset the view."}
                 </div>
             ) : (
                 <>

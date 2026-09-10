@@ -22,6 +22,8 @@ import heic2any from "heic2any";
 
 import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
 
+import { Toaster } from "sonner";
+
 import { db, storage, auth } from "../lib/firebase";
 import { moderateContent } from "../lib/moderation";
 import {
@@ -113,6 +115,7 @@ export default function App() {
   const [activeSection, setActiveSection] = useState("home");
   const [menuOpen, setMenuOpen] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
   const [learnTab, setLearnTab] = useState("council");
   const [contactSearch, setContactSearch] = useState("");
   const [reportForm, setReportForm] = useState({
@@ -141,6 +144,9 @@ export default function App() {
 
   // Detail modal: which report (if any) is currently expanded for a closer look.
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+
+  // Report id pulled from a shared ?report=<id> link, opened once the feed loads.
+  const [pendingSharedId, setPendingSharedId] = useState<string | null>(null);
   
 
   // Photo attached to the report currently being drafted. We keep the raw
@@ -290,6 +296,24 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Shared links look like /?report=<id>. Capture the id on first load, then
+  // open that report once the live feed has arrived from Firestore.
+  useEffect(() => {
+    const sharedId = new URLSearchParams(window.location.search).get("report");
+    if (sharedId) setPendingSharedId(sharedId);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingSharedId || issues.length === 0) return;
+    const match = issues.find((issue) => issue.id === pendingSharedId);
+    if (match) {
+      setSelectedIssue(match);
+      setActiveSection("issues");
+    }
+    // Clear either way so we don't retry on every feed update.
+    setPendingSharedId(null);
+  }, [pendingSharedId, issues]);
 
   // Close the detail modal on Escape, and lock body scroll while it's open.
   useEffect(() => {
@@ -549,6 +573,8 @@ export default function App() {
     ? issues.find((i) => i.id === selectedIssue.id) ?? selectedIssue
     : null;
 
+  const issuesFiledCount = issues.length;
+  const resolvedCount = issues.filter((issue) => issue.status === "Resolved").length;
   const openReportsCount = issues.filter((issue) => issue.status === "Open").length;
   const communitySupportsCount = issues.reduce(
     (total, issue) => total + (Number(issue.votes) || 0),
@@ -565,7 +591,12 @@ export default function App() {
         setDarkMode={setDarkMode}
         scrollTo={scrollTo}
       />
-      <Hero scrollTo={scrollTo} />
+      <Hero
+        scrollTo={scrollTo}
+        issuesFiledCount={issuesFiledCount}
+        resolvedCount={resolvedCount}
+        communitySupportsCount={communitySupportsCount}
+      />
       
       <MapSection 
           // MapView props
@@ -599,6 +630,8 @@ export default function App() {
       <IssuesSection 
         filterCategory={filterCategory}
         setFilterCategory={setFilterCategory}
+        filterStatus={filterStatus}
+        setFilterStatus={setFilterStatus}
         savedIssueIds={savedIssueIds}
         issuesLoading={issuesLoading}
         visibleIssues={visibleIssues}
@@ -634,6 +667,8 @@ export default function App() {
         currentUserUid={currentUser?.uid}
         handleFlag={handleFlag}
       />
+
+      <Toaster position="bottom-center" />
     </div>
   );
 }

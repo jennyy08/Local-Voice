@@ -1,6 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { X, Bookmark, BookmarkCheck, ThumbsUp, ImageOff } from "lucide-react";
+import { X, Bookmark, BookmarkCheck, ThumbsUp, ImageOff, Share2 } from "lucide-react";
 import { CATEGORY_CONFIG, STATUS_CONFIG } from "../../../data/constants";
+import { shareReport } from "../../../lib/share";
 
 type Issue = {
   id: string;
@@ -167,6 +168,14 @@ export default function IssueModal ({
                 >
                 <ThumbsUp size={12} />
                 {votes[modalIssue.id] ? "Supported" : "Support"}
+                </button>
+                <button
+                type="button"
+                onClick={() => shareReport(modalIssue)}
+                className="flex-1 flex items-center justify-center gap-1.5 text-xs font-mono px-3 py-2.5 rounded-sm border border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground transition-colors"
+                >
+                <Share2 size={12} />
+                Share
                 </button>
             </div>
 
